@@ -368,6 +368,53 @@ export const PREP = {
     ],
   },
 
+  // ---------- Pre-workout ----------
+  p1: { prep: 3, cook: 0, equipment: ["Bowl"], pantry: [[null, "", "pinch of cinnamon (optional)"]],
+    steps: [
+      "Spoon the Greek yogurt into a bowl.",
+      "Slice the banana on top and drizzle with the honey.",
+      "Eat 45–60 minutes before training. Banana and honey are fast carbs for energy; the yogurt's protein starts muscle repair early.",
+    ] },
+  p2: { prep: 2, cook: 4, equipment: ["Small saucepan or microwave-safe bowl", "Whisk"], pantry: [[0.25, "tsp", "cinnamon"], [null, "", "pinch of salt"], [0.75, "cup", "water"]],
+    steps: [
+      "Bring the water and salt to a boil (or microwave the water 1½ minutes).",
+      "Whisk in the cream of rice. Cook 30–60 seconds, whisking, until thick. It cooks fast and goes lumpy if left alone.",
+      "Take it off the heat and wait 30 seconds, then whisk in the whey and cinnamon. Add a splash of water if it gets too thick.",
+      "Top with the blueberries. Eat 60–90 minutes before training. Cream of rice digests very easily, so it won't sit heavy.",
+    ] },
+  p3: { prep: 3, cook: 0, equipment: ["Plate"], pantry: [[null, "", "pinch of salt (helps on hot days)"]],
+    steps: [
+      "Lay out the rice cakes and top them with the turkey.",
+      "Drizzle with the honey. Sweet and salty works.",
+      "Eat 30–60 minutes before training. It's light enough to eat close to your workout.",
+    ] },
+  p4: { prep: 2, cook: 4, equipment: ["Nonstick skillet", "Toaster"], pantry: [[null, "", "salt and pepper"], [null, "", "cooking spray"]],
+    steps: [
+      "Toast the bread.",
+      "Heat the skillet over medium-low with cooking spray. Pour in the egg whites and stir gently for 2–3 minutes until just set.",
+      "Drizzle the toast with honey and pile the egg whites on top.",
+      "Eat 60–90 minutes before training.",
+    ] },
+  p5: { prep: 5, cook: 12, equipment: ["Skillet", "Meat thermometer"], pantry: [[0.5, "tsp", "garlic powder"], [null, "", "salt and pepper"], [null, "", "cooking spray"]],
+    steps: [
+      "Season the chicken with garlic powder, salt and pepper.",
+      "Cook in a skillet over medium-high with cooking spray, 5–6 minutes per side, until it reads 165°F. Batch-cooked chicken from meal prep works too.",
+      "Serve over the warm rice.",
+      "Eat 90–120 minutes before training. This is a full meal, so give it time to digest.",
+    ] },
+  p6: { prep: 3, cook: 0, equipment: ["Blender"], pantry: [[4, "", "ice cubes"], [null, "", "pinch of salt"]],
+    steps: [
+      "Pour the soy milk into the blender first.",
+      "Add the pea protein, banana, ice and salt.",
+      "Blend 45 seconds until smooth. Drink 30–45 minutes before training. Liquid digests the fastest.",
+    ] },
+  p7: { prep: 2, cook: 2, equipment: ["Microwave-safe bowl"], pantry: [[0.5, "cup", "water"], [0.25, "tsp", "cinnamon"], [null, "", "pinch of salt"]],
+    steps: [
+      "Microwave the oats with the water and salt for 90 seconds, then stir.",
+      "Let them cool 30 seconds, then stir in the whey and cinnamon. Loosen with a splash of water if needed.",
+      "Top with sliced strawberries. Eat 60–90 minutes before training for steady energy.",
+    ] },
+
   // ---------- Snacks ----------
   s1: { prep: 2, cook: 0, equipment: ["Bowl"], pantry: [[null, "", "cinnamon (optional)"]],
     steps: ["Spoon the yogurt into a bowl.", "Top with the blueberries (thawed frozen berries work too) and a sprinkle of cinnamon."] },

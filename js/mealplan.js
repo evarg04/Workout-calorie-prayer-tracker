@@ -6,6 +6,7 @@ import { RECIPES, fitsDiet } from "./recipes.js";
 export const SLOTS = [
   { id: "breakfast", label: "Breakfast", meal: "Breakfast", range: [0.5, 2] },
   { id: "lunch", label: "Lunch", meal: "Lunch", range: [0.5, 2] },
+  { id: "preworkout", label: "Pre-workout", meal: "Snacks", range: [0.5, 1.5] },
   { id: "dinner", label: "Dinner", meal: "Dinner", range: [0.5, 2] },
   { id: "snack", label: "Snack", meal: "Snacks", range: [0.5, 1.5] },
   { id: "dessert", label: "Healthy dessert", meal: "Snacks", range: [0.5, 1.5] },
@@ -72,14 +73,15 @@ function candidates(pool, slot, diet, meatless) {
   return pool.filter((r) => r.slot === slot && fitsDiet(r, diet, meatless));
 }
 
-export function buildPlan({ target, diet, meatless, seed, webRecipes, keep = {} }) {
+export function buildPlan({ target, diet, meatless, seed, webRecipes, keep = {}, skip = [] }) {
   const pool = recipePool(webRecipes);
   const rand = rng(seed);
-  const options = Object.fromEntries(SLOTS.map((s) => [s.id, candidates(pool, s.id, diet, meatless)]));
+  const slots = SLOTS.filter((s) => !skip.includes(s.id));
+  const options = Object.fromEntries(slots.map((s) => [s.id, candidates(pool, s.id, diet, meatless)]));
   let best = null;
   for (let trial = 0; trial < 80; trial++) {
     const items = [];
-    for (const s of SLOTS) {
+    for (const s of slots) {
       const list = options[s.id];
       if (!list.length) continue;
       const kept = keep[s.id] && list.find((r) => r.id === keep[s.id]);

@@ -227,3 +227,38 @@ export async function photoToBase64(file, maxSide = 1568) {
   const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
   return { dataUrl, base64: dataUrl.split(",")[1], mediaType: "image/jpeg" };
 }
+
+// ---------- restaurant nutrition lookup ----------
+
+const RESTAURANT_SYSTEM = `You look up restaurant nutrition for a food-logging app.
+Use web search. Prefer, in order: the restaurant's own nutrition page, PDF or nutrition calculator; then reputable nutrition databases (e.g. Nutritionix, the chain's nutrition data republished by major sites). Never use a recipe blog or a user-entered estimate if official data exists.
+Split the order into the items the restaurant lists separately (for build-your-own places like Chipotle, list each component: base, protein, toppings, sauces). Use the size the user named; if they didn't, use the regular/default size and say so in notes.
+Only report numbers you found. If a chain doesn't publish nutrition or the place is a local restaurant, estimate from similar dishes and set "estimated": true with a short reason.
+Only cite URLs you actually found.
+Reply with one short sentence, then exactly one \`\`\`json code block:
+{"restaurant": string, "items": [{"name": string, "size": string, "calories": number, "protein": number, "carbs": number, "fat": number,
+  "sourceName": string, "url": string, "official": boolean, "estimated": boolean, "notes": string}], "notes": string}`;
+
+export async function findRestaurantNutrition({ apiKey, restaurant, order }) {
+  const text = await ask({
+    apiKey, system: RESTAURANT_SYSTEM,
+    content: `Restaurant: ${restaurant}\nWhat I ordered: ${order}\n\nFind the nutrition (calories, protein, carbs, fat) for each item.`,
+    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 6 }],
+  });
+  const r = parseJsonBlock(text);
+  const num = (v) => (Number.isFinite(+v) && +v >= 0 ? Math.round(+v * 10) / 10 : 0);
+  const items = (Array.isArray(r?.items) ? r.items : [])
+    .filter((x) => x && x.name)
+    .slice(0, 20)
+    .map((x) => ({
+      name: String(x.name).slice(0, 100),
+      size: String(x.size || "").slice(0, 60),
+      calories: num(x.calories), protein: num(x.protein), carbs: num(x.carbs), fat: num(x.fat),
+      source: /^https?:\/\//.test(x.url || "") ? { name: String(x.sourceName || new URL(x.url).hostname).slice(0, 60), url: x.url } : null,
+      official: !!x.official,
+      estimated: !!x.estimated || !/^https?:\/\//.test(x.url || ""),
+      notes: String(x.notes || "").slice(0, 200),
+    }));
+  if (!items.length) throw new Error("Couldn't find nutrition for that order. Try adding sizes or the exact menu names.");
+  return { restaurant: String(r.restaurant || restaurant).slice(0, 80), items, notes: String(r.notes || "").slice(0, 300) };
+}

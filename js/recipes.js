@@ -33,6 +33,7 @@ const ING = {
   "chickpeas (cooked)": [164, 8.9, 27.4, 2.6, ""],
   "lentils (cooked)": [116, 9, 20, 0.4, ""],
   "rolled oats": [379, 13, 68, 6.5, "g"],
+  "cream of rice (dry)": [370, 6, 82, 0.5, ""],
   "white rice (cooked)": [130, 2.7, 28, 0.3, ""],
   "quinoa (cooked)": [120, 4.4, 21, 1.9, ""],
   "whole-wheat pasta (dry)": [350, 14, 73, 2.5, "g"],
@@ -149,6 +150,22 @@ const RAW = [
 
   ["d11", "Tofu & Edamame Stir-Fry", "dinner", [["firm tofu", 150], ["shelled edamame", 100], ["broccoli", 100], ["bell pepper", 60], ["white rice (cooked)", 120], ["low-sodium soy sauce", 15], ["sesame oil", 5]],
     ["Crisp cubed tofu in a hot pan.", "Add edamame, broccoli and pepper with garlic and ginger; stir-fry 4 min.", "Add soy and sesame oil; serve over rice."], ""],
+
+  // ---------- Pre-workout: fast carbs, moderate protein, low fat and fiber ----------
+  ["p1", "Greek Yogurt, Banana & Honey Bowl", "preworkout", [["nonfat Greek yogurt", 170], ["banana", 100], ["honey", 10]],
+    ["Slice the banana over the yogurt.", "Drizzle with honey."], "Eat 45–60 min before training"],
+  ["p2", "Cream of Rice Protein Bowl", "preworkout", [["cream of rice (dry)", 40], ["whey protein", 25], ["blueberries", 50]],
+    ["Cook the cream of rice.", "Stir in whey off the heat.", "Top with blueberries."], "Bodybuilder staple · 60–90 min before"],
+  ["p3", "Rice Cakes, Turkey & Honey", "preworkout", [["rice cakes", 27], ["deli turkey breast", 85], ["honey", 10]],
+    ["Top rice cakes with turkey.", "Drizzle with honey."], "Light and quick · 30–60 min before"],
+  ["p4", "Egg White Toast with Honey", "preworkout", [["whole-grain bread", 70], ["liquid egg whites", 150], ["honey", 10]],
+    ["Scramble egg whites.", "Toast bread, drizzle honey.", "Pile on the whites."], "60–90 min before"],
+  ["p5", "Chicken & White Rice", "preworkout", [["chicken breast (raw)", 100], ["white rice (cooked)", 150]],
+    ["Cook chicken.", "Serve over rice."], "Classic · 90–120 min before"],
+  ["p6", "Banana Plant-Protein Shake", "preworkout", [["pea protein powder", 30], ["banana", 120], ["unsweetened soy milk", 250]],
+    ["Blend everything with ice."], "Drinkable · 30–45 min before"],
+  ["p7", "Oats & Whey with Berries", "preworkout", [["rolled oats", 40], ["whey protein", 25], ["strawberries", 80]],
+    ["Microwave oats with water.", "Stir in whey.", "Top with berries."], "Steady energy · 60–90 min before"],
 
   // ---------- Snacks ----------
   ["s1", "Greek Yogurt & Berries", "snack", [["nonfat Greek yogurt", 200], ["blueberries", 75]], ["Top yogurt with berries."], ""],

@@ -10,7 +10,7 @@ import { generateReflection, renderMarkdown } from "./reflect.js";
 import { DIETS } from "./recipes.js";
 import { SLOTS, buildPlan, swapSlot, hydrate, planTotals, recipePool, scaled, groceryList } from "./mealplan.js";
 import { PROGRAMS, CATALOG, MUSCLES, todaysSession, weeklyVolume, round5, sessionsBefore } from "./programs.js";
-import { findWebRecipes, lookupExercise, askCoach, readNutrition, photoToBase64, getClient } from "./ai.js";
+import { findWebRecipes, lookupExercise, askCoach, readNutrition, photoToBase64, getClient, findRestaurantNutrition } from "./ai.js";
 
 // ---------- tiny templating: interpolations are escaped unless wrapped in raw() ----------
 const RAW = Symbol("raw");
@@ -200,7 +200,7 @@ function drawWeightChart(s) {
 // ---------- FOOD ----------
 
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Snacks"];
-const SLOT_SHARE = { breakfast: 0.25, lunch: 0.3, dinner: 0.3, snack: 0.1, dessert: 0.08 };
+const SLOT_SHARE = { breakfast: 0.25, lunch: 0.3, preworkout: 0.12, dinner: 0.3, snack: 0.1, dessert: 0.08 };
 const fmtGrams = (g) => (g >= 28 ? `${round(g)} g (${(g / 28.35).toFixed(1)} oz)` : `${round(g)} g`);
 const FRACTIONS = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
 function fmtQty(q) {
@@ -233,21 +233,23 @@ function buildDayPlan(s, key, seedN, previous) {
   const target = targetsFor(s);
   const diet = s.profile.diet || "everything";
   const meatless = isMeatless(s, key);
-  const plan = buildPlan({ target, diet, meatless, seed: `${key}:${seedN}`, webRecipes: s.webRecipes });
+  const pre = s.profile.preworkout !== false;
+  const plan = buildPlan({ target, diet, meatless, seed: `${key}:${seedN}`, webRecipes: s.webRecipes, skip: pre ? [] : ["preworkout"] });
   for (const old of previous?.items || []) {
     if (!old.logged) continue;
     const i = plan.items.findIndex((x) => x.slot === old.slot);
     if (i >= 0) plan.items[i] = { ...old };
     else plan.items.push({ ...old });
   }
-  s.plans[key] = { ...plan, diet, meatless, targetCal: target.calories, seedN };
+  s.plans[key] = { ...plan, diet, meatless, pre, targetCal: target.calories, seedN };
   return s.plans[key];
 }
 
 function ensurePlan(s, key) {
   const target = targetsFor(s);
   const cached = s.plans[key];
-  const fresh = cached?.items && cached.diet === (s.profile.diet || "everything") && cached.meatless === isMeatless(s, key);
+  const fresh = cached?.items && cached.diet === (s.profile.diet || "everything") && cached.meatless === isMeatless(s, key)
+    && (cached.pre ?? false) === (s.profile.preworkout !== false);
   if (fresh && (Math.abs(cached.targetCal - target.calories) < 60 || cached.items.some((i) => i.logged))) return cached;
   const plan = buildDayPlan(s, key, cached?.seedN || 0, cached);
   save();
@@ -420,6 +422,71 @@ function scanCard(s) {
     </section>`;
 }
 
+// ---------- restaurant lookup ----------
+
+function restaurantCard(s) {
+  const R = ui.rest;
+  if (!s.settings.apiKey) {
+    return html`<section class="card"><div class="sec-head"><h2>Ate out?</h2></div>
+      <p class="hint">Add your Anthropic API key on the Me tab, then type where you ate and what you ordered. The app finds the restaurant's published nutrition and fills in your macros.</p></section>`;
+  }
+  if (R?.loading) {
+    return html`<section class="card"><div class="sec-head"><h2>Ate out?</h2></div>
+      <p class="hint">Looking up ${R.restaurant}'s nutrition for "${R.order}"…</p></section>`;
+  }
+  if (R?.data) {
+    const d = R.data;
+    const total = d.items.reduce((t, x) => ({ cal: t.cal + x.calories, p: t.p + x.protein, c: t.c + x.carbs, f: t.f + x.fat }), { cal: 0, p: 0, c: 0, f: 0 });
+    return html`
+      <section class="card">
+        <div class="sec-head"><h2>${d.restaurant}</h2><span class="sec-meta">check and log</span></div>
+        ${d.notes ? html`<p class="hint">${d.notes}</p>` : ""}
+        <form data-form="log-restaurant">
+          <ul class="parsed">${d.items.map((x, i) => html`
+            <li class="parsed-row">
+              <label class="check rest-item"><input type="checkbox" name="use${i}" checked data-live="rest">
+                <span><strong>${x.name}</strong>${x.size ? html`<span class="sub-line">${x.size}</span>` : ""}</span></label>
+              <div class="rest-macros"><strong>${Math.round(x.calories)}</strong> kcal · ${x.protein}P · ${x.carbs}C · ${x.fat}F</div>
+              <div class="rest-meta">
+                ${x.official ? html`<span class="chip chip-good">restaurant data</span>` : x.estimated ? html`<span class="chip chip-warning">estimate</span>` : html`<span class="chip chip-new">database</span>`}
+                ${x.source ? html`<a href="${x.source.url}" target="_blank" rel="noopener">${x.source.name} ↗</a>` : ""}
+              </div>
+              ${x.notes ? html`<p class="sub-line">${x.notes}</p>` : ""}
+              <label class="servings-mini">Servings<input name="qty${i}" type="number" inputmode="decimal" min="0.25" step="0.25" value="1" data-live="rest"></label>
+            </li>`)}</ul>
+          <label>Meal<select name="meal">${MEALS.map((m) => html`<option ${m === mealForNow() ? "selected" : ""}>${m}</option>`)}</select></label>
+          <p class="scan-total" id="rest-total">Logs ${Math.round(total.cal)} kcal · ${Math.round(total.p)} g protein · ${Math.round(total.c)} g carbs · ${Math.round(total.f)} g fat</p>
+          <button class="btn full btn-log" type="submit">Log it</button>
+          <button class="btn ghost full" type="button" data-action="rest-cancel">Cancel</button>
+        </form>
+      </section>`;
+  }
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Ate out?</h2></div>
+      <form data-form="find-restaurant" class="grid-form">
+        <label class="span2">Where did you eat?<input name="restaurant" value="${R?.restaurant || ""}" placeholder="Chipotle, Chick-fil-A, Whataburger…" autocomplete="off" autocapitalize="words" required></label>
+        <label class="span2">What did you get?<textarea name="order" rows="3" placeholder="Chicken burrito bowl, white rice, black beans, mild salsa, guac" autocomplete="off" required>${R?.order || ""}</textarea></label>
+        <button class="btn span2" type="submit">Find nutrition</button>
+      </form>
+      ${R?.error ? html`<p class="error">${R.error}</p>` : ""}
+      <p class="hint">Uses the restaurant's own published nutrition when it exists. Include sizes, sauces and sides for the best match.</p>
+    </section>`;
+}
+
+function refreshRestTotal() {
+  const form = document.querySelector('form[data-form="log-restaurant"]');
+  const out = document.getElementById("rest-total");
+  if (!form || !out || !ui.rest?.data) return;
+  const t = { cal: 0, p: 0, c: 0, f: 0 };
+  ui.rest.data.items.forEach((x, i) => {
+    if (!form.elements[`use${i}`].checked) return;
+    const k = Math.max(0, +form.elements[`qty${i}`].value || 0);
+    t.cal += x.calories * k; t.p += x.protein * k; t.c += x.carbs * k; t.f += x.fat * k;
+  });
+  out.textContent = `Logs ${Math.round(t.cal)} kcal · ${Math.round(t.p)} g protein · ${Math.round(t.c)} g carbs · ${Math.round(t.f)} g fat`;
+}
+
 async function startScan(file) {
   ui.scan = { loading: true };
   render();
@@ -453,6 +520,7 @@ function renderFood(s) {
     ${summary}
     ${penanceCard(key)}
 
+    ${restaurantCard(s)}
     ${scanCard(s)}
 
     <section class="card">
@@ -1475,6 +1543,7 @@ function renderMeSettings(s) {
       <form data-form="prefs" class="grid-form">
         <label class="span2">Diet for your daily menu<select name="diet">${Object.entries(DIETS).map(([k, v]) => html`<option value="${k}" ${k === (p.diet || "everything") ? "selected" : ""}>${v.label}</option>`)}</select></label>
         <label class="check span2"><input type="checkbox" name="meatlessFridays" ${p.meatlessFridays ? "checked" : ""}> Meatless menus on every Friday (Lenten Fridays and Ash Wednesday are always meatless)</label>
+        <label class="check span2"><input type="checkbox" name="preworkout" ${p.preworkout !== false ? "checked" : ""}> Include a pre-workout meal in my daily menu</label>
         <button class="btn span2" type="submit">Save preferences</button>
       </form>
     </section>
@@ -1754,6 +1823,34 @@ const forms = {
     render();
     toast(`Logged ${total} sets`);
   },
+  async "find-restaurant"(d) {
+    const restaurant = d.restaurant.trim(), order = d.order.trim();
+    if (!restaurant || !order) return toast("Add the restaurant and what you got");
+    ui.rest = { loading: true, restaurant, order };
+    render();
+    try {
+      ui.rest = { restaurant, order, data: await findRestaurantNutrition({ apiKey: getState().settings.apiKey, restaurant, order }) };
+    } catch (err) {
+      ui.rest = { restaurant, order, error: err.message };
+    }
+    render();
+  },
+  "log-restaurant"(d) {
+    const data = ui.rest?.data;
+    if (!data) return;
+    const r1 = (v) => Math.round(v * 10) / 10;
+    const entries = data.items.map((x, i) => {
+      if (!d[`use${i}`]) return null;
+      const k = Math.max(0, +d[`qty${i}`] || 0);
+      if (!k) return null;
+      return { id: uid(), meal: d.meal, name: `${data.restaurant}: ${x.name}${k !== 1 ? ` ×${k}` : ""}`, cal: Math.round(x.calories * k), p: r1(x.protein * k), c: r1(x.carbs * k), f: r1(x.fat * k) };
+    }).filter(Boolean);
+    if (!entries.length) return toast("Nothing selected");
+    update((st) => { (st.foods[ui.date] ??= []).push(...entries); });
+    ui.rest = null;
+    render();
+    toast(`Logged ${entries.reduce((t, e) => t + e.cal, 0)} kcal from ${data.restaurant}`);
+  },
   "scan-log"(d) {
     const k = Math.max(0.25, +d.servings || 1);
     const r1 = (v) => Math.round(num(v) * k * 10) / 10;
@@ -1818,7 +1915,7 @@ const forms = {
     toast(`Next workout: ${PROGRAMS[getState().program.id].plan[day].name}`);
   },
   prefs(d) {
-    update((s) => { s.profile.diet = d.diet; s.profile.meatlessFridays = !!d.meatlessFridays; });
+    update((s) => { s.profile.diet = d.diet; s.profile.meatlessFridays = !!d.meatlessFridays; s.profile.preworkout = !!d.preworkout; });
     toast("Preferences saved");
   },
   async "web-recipes"(d) {
@@ -1945,6 +2042,7 @@ const actions = {
   rest(el) { startRest(+el.dataset.sec); },
   "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
   "scan-cancel"() { ui.scan = null; render(); },
+  "rest-cancel"() { ui.rest = null; render(); },
   "parsed-edit"() { ui.parsed = null; render(); },
   "maxes-cancel"() { ui.maxParsed = null; render(); },
   "paste-maxes"(el) { pasteInto(el.closest("form").querySelector("textarea")); },
@@ -2080,6 +2178,7 @@ function refreshScanTotal() {
 
 document.addEventListener("input", (e) => {
   if (e.target.dataset?.live === "scan") return refreshScanTotal();
+  if (e.target.dataset?.live === "rest") return refreshRestTotal();
   if (e.target.dataset?.live !== "ex-query") return;
   ui.exQuery = e.target.value;
   ui.exPick = null;
@@ -2089,6 +2188,7 @@ document.addEventListener("input", (e) => {
 });
 
 document.addEventListener("change", (e) => {
+  if (e.target.dataset?.live === "rest") refreshRestTotal();
   const el = e.target.closest("[data-action]");
   if (el && changes[el.dataset.action]) changes[el.dataset.action](el);
 });

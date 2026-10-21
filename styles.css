@@ -515,3 +515,13 @@ textarea { -webkit-user-select: text; user-select: text; touch-action: manipulat
 .lock-box label { color: var(--head-ink); font: 700 13px/1.2 var(--f-num); letter-spacing: 0.1em; text-transform: uppercase; }
 .lock-box input { text-align: center; font: 700 28px/1 var(--f-num); letter-spacing: 0.4em; background: #222326; color: #eeece7; border-color: #303236; }
 .lock-box .link-btn { color: var(--head-ink); opacity: 0.7; }
+
+/* ---------- restaurant lookup ---------- */
+.rest-item { margin: 0; }
+.rest-item strong { font-size: 16px; }
+.rest-macros { font: 500 15px/1.3 var(--f-num); margin: 4px 0 0 30px; font-variant-numeric: tabular-nums; }
+.rest-macros strong { font-size: 20px; }
+.rest-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0 0 30px; font-size: 13px; }
+.parsed-row > .sub-line { margin-left: 30px; }
+.servings-mini { flex-direction: row; align-items: center; gap: 8px; margin: 6px 0 0 30px; }
+.servings-mini input { width: 80px; text-align: center; }
