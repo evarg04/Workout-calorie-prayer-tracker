@@ -4,7 +4,7 @@ import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, s
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
 import { APP_VERSION } from "./version.js";
-import { RAISE, mobilityFor, rampSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP } from "./recovery.js";
+import { RAISE, mobilityFor, warmupSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP } from "./recovery.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
@@ -772,32 +772,9 @@ function moveList(moves) {
   return html`<ul class="moves">${moves.map(([name, dose, cue]) => html`<li><div class="move-top"><strong>${name}</strong><span class="move-dose">${dose}</span></div><span class="sub-line">${cue}</span></li>`)}</ul>`;
 }
 
-// The first lift of the day and the weight it's prescribed at, for ramp-up sets.
-function firstLift(s, w, key, order, exById) {
-  const id = order[0];
-  const ex = id && exById[id];
-  if (!ex) return null;
-  const rxItem = w.plan?.items?.find((i) => i.exId === id);
-  let weight, reps;
-  if (rxItem?.detail) {
-    const main = rxItem.detail.filter((d) => d.label && !/BBB/.test(d.label));
-    weight = Math.max(...main.map((d) => d.weight));
-    reps = main[main.length - 1]?.reps || 5;
-  } else {
-    const exRx = rxItem ? { ...ex, repMin: rxItem.repMin, repMax: rxItem.repMax, sets: rxItem.sets } : ex;
-    const sug = suggestNext(exRx, s.workouts, key, rxOf(rxItem) || undefined, s.baselines?.[id]);
-    weight = sug.weight;
-    reps = rxItem?.repMin ?? ex.repMin;
-  }
-  const equipment = howOf(ex)?.equipment || "";
-  return { ex, weight, reps, barbell: /barbell|smith/i.test(equipment) };
-}
-
 function warmupCard(s, w, key, order, exById) {
   const exs = order.map((id) => exById[id]).filter(Boolean);
   const kind = dayKind(exs);
-  const lift = firstLift(s, w, key, order, exById);
-  const ramp = lift ? rampSets(lift.weight, lift.reps, lift.barbell) : [];
   const started = w.sets.length > 0;
   return html`
     <details class="card warmup" ${started ? "" : "open"}>
@@ -805,12 +782,8 @@ function warmupCard(s, w, key, order, exById) {
       <ol class="warm-steps">
         <li><span class="eyebrow">1 · Raise</span><div class="move-top"><strong>${RAISE.name}</strong><span class="move-dose">${RAISE.dose}</span></div><span class="sub-line">${RAISE.cue}</span></li>
         <li><span class="eyebrow">2 · Mobilize</span>${moveList(mobilityFor(kind))}</li>
-        <li><span class="eyebrow">3 · Ramp up${lift ? `: ${lift.ex.name}` : ""}</span>
-          ${ramp.length ? html`
-            <table class="table ramp"><tr><th>Set</th><th>Weight</th><th>Reps</th></tr>
-              ${ramp.map((r, i) => html`<tr><td>${i + 1}</td><td>${r.weight} lb</td><td>${r.reps}</td></tr>`)}</table>
-            <p class="hint">Rest about 60 seconds between. Then start your working sets at ${lift.weight} lb. Fewer reps as the weight climbs keeps you fresh.</p>`
-          : html`<p class="hint">${lift ? "Do 2–3 light sets of your first exercise, adding weight each set and dropping reps (8, 5, 3), before your working sets." : "Add or load today's exercises and your ramp-up sets appear here."}</p>`}
+        <li><span class="eyebrow">3 · Warm-up sets</span>
+          <p class="hint">Each exercise below lists its own warm-up sets, scaled to that day's working weight. The first lift for a muscle gets a full ramp; muscles that are already warm get one feeder set or none.</p>
         </li>
       </ol>
       <details><summary>Why warm up this way</summary>${evidenceList(WARMUP_EVIDENCE)}</details>
@@ -1211,6 +1184,27 @@ function workoutReview(s, w, key, order, exById) {
     </section>`;
 }
 
+// Warm-up sets for one exercise card: a full ramp for the first lift that loads a muscle today,
+// a single feeder set when an earlier lift already warmed it up.
+function warmupFor(s, ex, w, rxItem, sug, nextWeight) {
+  const exById = Object.fromEntries(s.exercises.map((e) => [e.id, e]));
+  const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])];
+  const muscleOf = (e) => e?.muscle || CATALOG[e?.name]?.[1];
+  const before = order.slice(0, Math.max(0, order.indexOf(ex.id))).map((id) => exById[id]).filter(Boolean);
+  const warm = before.some((e) => muscleOf(e) === muscleOf(ex) || (ex.kind === "lower" && e.kind === "lower" && /squat|deadlift|press|lunge/i.test(e.name)));
+  const equipment = howOf(ex)?.equipment || "";
+  if (rxItem?.detail) {
+    const first = rxItem.detail[0];
+    const tm = rxItem.tm || (first ? Math.round(first.weight / 0.65 / 5) * 5 : null);
+    const plan = warmupSets({ workWeight: first?.weight, workReps: first?.reps || 5, equipment, warm: false, increment: ex.increment, tm });
+    const sets = plan.sets.map((x) => ({ ...x, pct: Math.round((x.weight / tm) * 100) }));
+    return { ...plan, sets, targetLabel: `your ${tm} lb Training Max`, note: "Jim Wendler's 5/3/1 warm-up: 40%, 50% and 60% of your Training Max." };
+  }
+  const target = +nextWeight || sug.weight;
+  const plan = warmupSets({ workWeight: target, workReps: rxItem?.repMin ?? ex.repMin, equipment, warm, increment: ex.increment });
+  return { ...plan, targetLabel: `${target} lb` };
+}
+
 const TARGET_LABEL = { up: "Add weight", deload: "Deload", reps: "Beat last time", new: "Target", carry: "Carried over" };
 
 function exerciseCard(s, ex, w, key, open = true) {
@@ -1238,6 +1232,7 @@ function exerciseCard(s, ex, w, key, open = true) {
   const inc = ex.increment || 5;
   const how = howOf(ex);
   const done = rxItem && sets.length >= rxItem.sets;
+  const warm = warmupFor(s, ex, w, rxItem, sug, nextWeight);
   const deltaText = (fb) => fb.delta || (prev ? "—" : "new");
   const setRows = sets.length ? html`<ol class="set-list">${sets.map((x, i) => {
     const fb = feedback[i];
@@ -1277,6 +1272,12 @@ function exerciseCard(s, ex, w, key, open = true) {
       ${rxItem?.note && !rxItem.detail ? html`<p class="hint">${rxItem.note}</p>` : ""}
       ${how?.cues?.[0] ? html`<p class="cue"><span class="target-label">Cue</span> ${how.cues[0]}</p>` : ""}
 
+      ${warm.sets.length ? html`
+        <details class="warmup-sets" ${sets.length ? "" : "open"}>
+          <summary>Warm-up sets${sets.length ? " (done)" : ""} · ${warm.sets.length}</summary>
+          <ul class="warm-list">${warm.sets.map((x) => html`<li><label class="check"><input type="checkbox"><span><strong>${x.weight}</strong> lb × <strong>${x.reps}</strong> <span class="sub-line">${x.pct}% of ${warm.targetLabel}</span></span></label></li>`)}</ul>
+          <p class="hint">${warm.note} Warm-up sets aren't logged and don't count toward your progress.</p>
+        </details>` : warm.note ? html`<p class="hint">${warm.note}</p>` : ""}
       ${rxItem?.detail ? html`<table class="table plan-table"><tr><th>Set</th><th>Weight</th><th>Reps</th><th></th></tr>
         ${rxItem.detail.map((d, i) => html`<tr class="${i < sets.length ? "done" : i === sets.length ? "next" : ""}"><td>${i + 1}</td><td>${d.weight} lb</td><td>${d.reps}${d.plus ? "+" : ""}</td><td class="sub-line">${d.label}</td></tr>`)}</table>` : ""}
 

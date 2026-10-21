@@ -153,7 +153,7 @@ export function todaysSession(program, workouts, key, tmFor) {
       const main = WAVES[wave].map(([pct, reps, plus]) => ({ weight: round5(tm * pct), reps, label: `${Math.round(pct * 100)}%${plus ? " · AMRAP" : ""}`, plus }));
       const bbb = wave === 3 ? [] : Array.from({ length: 5 }, () => ({ weight: round5(tm * 0.5), reps: 10, label: "BBB 50%" }));
       return {
-        name, scheme: "531", sets: main.length + bbb.length, repMin: 5, repMax: 10, rest: 180,
+        name, scheme: "531", tm, sets: main.length + bbb.length, repMin: 5, repMax: 10, rest: 180,
         detail: [...main, ...bbb],
         note: `${WEEK_NAMES[wave]} · Training Max ${tm} lb. Last main set: as many good reps as you can, then 5 × 10 at 50%.`,
       };
