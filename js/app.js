@@ -200,6 +200,25 @@ function drawWeightChart(s) {
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Snacks"];
 const SLOT_SHARE = { breakfast: 0.25, lunch: 0.3, dinner: 0.3, snack: 0.1, dessert: 0.08 };
 const fmtGrams = (g) => (g >= 28 ? `${round(g)} g (${(g / 28.35).toFixed(1)} oz)` : `${round(g)} g`);
+const FRACTIONS = { 0.25: "¼", 0.5: "½", 0.75: "¾" };
+function fmtQty(q) {
+  const r = Math.round(q * 4) / 4;
+  if (r <= 0) return "pinch";
+  const whole = Math.floor(r), frac = FRACTIONS[r - whole] || "";
+  return `${whole || ""}${frac}` || String(r);
+}
+function fmtIngredient(ing, mult) {
+  const g = ing.g * mult;
+  if (ing.name === "eggs") { const n = Math.round(g / 50 * 2) / 2; return `${n} large egg${n === 1 ? "" : "s"} (${round(g)} g)`; }
+  return `${fmtGrams(g)} ${ing.name}`;
+}
+function fmtPantry([q, unit, name], mult) {
+  if (q == null) return name;
+  const amt = fmtQty(q * mult);
+  const plural = unit && q * mult > 1 && unit === "clove" ? "cloves" : unit;
+  return `${amt}${plural ? ` ${plural}` : ""} ${name}`;
+}
+const fmtMins = (m) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`);
 
 function isMeatless(s, key) {
   const lit = liturgicalDay(key);
@@ -251,10 +270,20 @@ function menuItem({ slot, recipe, mult, logged }, idx) {
       </div>
       ${recipe.note ? html`<div class="note">${recipe.note}</div>` : ""}
       ${recipe.source ? html`<div class="tiny"><a href="${recipe.source.url}" target="_blank" rel="noopener">${recipe.source.name} ↗</a>${recipe.estimated ? " · macros estimated" : ""}</div>` : ""}
-      <details><summary>Recipe</summary>
-        <ul class="ingredients">${(recipe.ingredients || []).map((ing) => (typeof ing === "string" ? html`<li>${ing}</li>` : html`<li>${fmtGrams(ing.g * mult)} ${ing.name}</li>`))}</ul>
-        ${recipe.source && mult !== 1 ? html`<p class="tiny muted">Quantities are for 1 serving; make ${mult}.</p>` : ""}
-        <ol class="steps">${(recipe.steps || []).map((x) => html`<li>${x}</li>`)}</ol>
+      <details class="recipe"><summary>How to make it</summary>
+        ${recipe.prep != null ? html`<dl class="recipe-meta">
+          <div><dt>Prep</dt><dd>${fmtMins(recipe.prep)}</dd></div>
+          ${recipe.cook ? html`<div><dt>Cook</dt><dd>${fmtMins(recipe.cook)}</dd></div>` : ""}
+          ${recipe.wait ? html`<div class="wide"><dt>Plus</dt><dd>${recipe.wait}</dd></div>` : ""}
+        </dl>` : ""}
+        ${recipe.equipment?.length ? html`<p class="hint"><strong>You'll need:</strong> ${recipe.equipment.join(", ")}.</p>` : ""}
+        <h4>Ingredients${mult !== 1 ? ` · for ${mult} servings` : ""}</h4>
+        <ul class="ingredients">${(recipe.ingredients || []).map((ing) => (typeof ing === "string" ? html`<li>${ing}</li>` : html`<li>${fmtIngredient(ing, mult)}</li>`))}</ul>
+        ${recipe.source && mult !== 1 ? html`<p class="hint">Quantities are for 1 serving; make ${mult}.</p>` : ""}
+        ${recipe.pantry?.length ? html`<h4>Seasonings</h4><ul class="ingredients">${recipe.pantry.map((x) => html`<li>${fmtPantry(x, mult)}</li>`)}</ul>` : ""}
+        <h4>Steps</h4>
+        <ol class="steps recipe-steps">${(recipe.steps || []).map((x) => html`<li>${x}</li>`)}</ol>
+        ${recipe.source ? html`<p class="hint">Full recipe and video: <a href="${recipe.source.url}" target="_blank" rel="noopener">${recipe.source.name} ↗</a></p>` : ""}
       </details>
     </div>`;
 }
