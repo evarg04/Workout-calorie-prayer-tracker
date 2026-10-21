@@ -570,3 +570,26 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .sub-list li:first-child { border-top: 0; }
 .sub-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .swaps { margin-top: 8px; }
+
+/* ---------- finisher sheet & extras ---------- */
+.sheet-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); z-index: 30; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; max-width: 640px; margin: 0 auto;
+  background: var(--surface); border-radius: 14px 14px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+  border-top: 3px solid var(--accent); box-shadow: 0 -8px 24px rgb(0 0 0 / 0.2);
+}
+.sheet h2 { font-size: 18px; margin-bottom: 4px; }
+.sheet-options { display: grid; gap: 8px; margin: 12px 0; }
+.sheet-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; color: var(--ink); font: inherit; }
+.sheet-opt strong { font: 700 16px/1.2 var(--f-num); letter-spacing: 0.06em; text-transform: uppercase; }
+.sheet-opt span { font-size: 14px; color: var(--muted); }
+.sheet-opt:active { border-color: var(--accent); }
+.finish-btn { margin-bottom: var(--gap); }
+.finish-more { display: block; width: 100%; margin: 0 0 var(--gap); padding: 10px 0; background: none; border: 0; color: var(--ink-2); font: 600 14px/1.2 var(--f-body); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.moves li.zone { font: 700 12px/1.2 var(--f-num); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); border-top: 0; padding: 12px 0 2px; }
+.seg-tabs { display: flex; gap: 0; margin: 4px 0 8px; }
+.seg-tabs button { flex: 1; padding: 9px 0; font: 700 13px/1 var(--f-num); letter-spacing: 0.08em; text-transform: uppercase; background: var(--surface); color: var(--ink-2); border: 1px solid var(--line); margin-left: -1px; cursor: pointer; }
+.seg-tabs button:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
+.seg-tabs button:last-child { border-radius: 0 4px 4px 0; }
+.seg-tabs button.is-on { background: var(--ink); color: var(--bg); border-color: var(--ink); }

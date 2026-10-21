@@ -89,10 +89,12 @@ export function suggestNext(ex, workouts, beforeDate = dateKey(), rx, baseline) 
 }
 
 // Is a given set a personal record (by estimated 1RM or by weight at ≥ those reps)?
-export function isPR(workouts, exId, set, date) {
+// With no logged history yet, the max the user entered is the bar to beat.
+export function isPR(workouts, exId, set, date, baseline) {
   const prior = history(workouts, exId).filter((h) => h.date < date).flatMap((h) => h.sets);
-  if (!prior.length) return false;
-  return e1rm(+set.weight, +set.reps) > bestE1rm(prior) + 0.01;
+  const best = Math.max(prior.length ? bestE1rm(prior) : 0, baseline?.e1rm || 0);
+  if (!best) return false;
+  return e1rm(+set.weight, +set.reps) > best + 0.01;
 }
 
 // Strength direction per lift over the last ~4 weeks vs the 4 before.
@@ -162,9 +164,14 @@ export function setFeedback({ ex, set, index, prev, repMin, repMax, totalSets })
 const volumeOf = (sets) => sets.reduce((t, s) => t + (+s.weight || 1) * +s.reps, 0);
 
 // Verdict for an exercise today vs its previous session.
-export function exerciseVerdict(sets, prev) {
+export function exerciseVerdict(sets, prev, baseline) {
   if (!sets.length) return null;
   const best = bestE1rm(sets);
+  if (!prev && baseline?.e1rm) {
+    const vs = Math.round((best / baseline.e1rm) * 100);
+    if (best > baseline.e1rm + 0.01) return { kind: "up", text: `New best: est. 1RM ${Math.round(best)} lb beats the ${Math.round(baseline.e1rm)} lb max you entered.` };
+    return { kind: "new", text: `First logged session: est. 1RM ${Math.round(best)} lb, ${vs}% of your ${Math.round(baseline.e1rm)} lb max. That's right where working sets should be. This is your baseline.` };
+  }
   if (!prev) return { kind: "new", text: `First session logged: best set ≈ ${Math.round(best)} lb est. 1RM. This is your baseline.` };
   const vol = pct(volumeOf(sets), volumeOf(prev.sets));
   const strength = pct(best, bestE1rm(prev.sets));

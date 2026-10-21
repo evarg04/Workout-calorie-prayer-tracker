@@ -65,6 +65,11 @@ Pick one and the app loads each day's workout, with sets, reps, and rest times:
 - A cool-down stretch after training, plus a full 10-minute stretching routine (2 × 30 s holds) for rest days.
 - **Optional sauna guidance**, off until you read and accept a safety list. Session length is based on your heat experience, not body weight; your body weight sets a personal sweat-loss limit (1% of body weight) and how much to drink. Benefits, warning signs and research sources are shown in the app.
 
+**After the last set:** a short, no-pressure prompt offers abs, cardio, or sauna (sauna only if you turned it on and accepted the safety list). "I'm done for today" is always the main button, and you can change your mind later from the workout page.
+- **Abs: top, middle and bottom.** A gym version (cable crunch, Pallof press, side plank hip dip, hanging leg raise) and a no-equipment version (crunch, bicycle crunch, side plank hip dip, reverse crunch, dead bug). One tap adds them to today's workout so you can log them.
+- **Cardio:** easy 10–20 min (recommended) or short intervals. Calories burned are estimated from standard exercise values for your weight, and aren't added back to your food target.
+- **First session on a lift** sets your baseline. If you entered your maxes, it's compared against them, so the review shows real numbers instead of zeros.
+
 **Built to prevent stalls:**
 - Every exercise progresses on its own rep range.
 - After two missed sessions, the app drops the weight 10% so you can build back up.
