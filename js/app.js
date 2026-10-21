@@ -8,7 +8,7 @@ import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
 import { DIETS } from "./recipes.js";
 import { SLOTS, buildPlan, swapSlot, hydrate, planTotals, recipePool, scaled, groceryList } from "./mealplan.js";
-import { PROGRAMS, CATALOG, MUSCLES, todaysSession, weeklyVolume, round5 } from "./programs.js";
+import { PROGRAMS, CATALOG, MUSCLES, todaysSession, weeklyVolume, round5, sessionsBefore } from "./programs.js";
 import { findWebRecipes, lookupExercise, askCoach, readNutrition, photoToBase64 } from "./ai.js";
 
 // ---------- tiny templating: interpolations are escaped unless wrapped in raw() ----------
@@ -588,9 +588,12 @@ function programList(s) {
         <p class="small">${p.bestFor}</p>
         ${ui.pickProgram === id ? html`
           <form data-form="start-program" data-id="${id}" class="grid-form tm-form">
-            <p class="hint span2">5/3/1 sets its weights from your 1-rep maxes. These are filled in from your logs where possible; adjust if you know your true max. Your Training Max is set to 90% of each.</p>
-            ${TM_LIFTS.map((n) => html`<label>${n} 1RM (lb)<input name="${n}" type="number" inputmode="numeric" min="0" step="5" value="${est1rm(s, n) || ""}" required></label>`)}
-            <button class="btn span2" type="submit">Start 5/3/1</button>
+            <label class="span2">Your next workout<select name="day">${p.plan.map((d, i) => html`<option value="${i}">Day ${i + 1}: ${d.name}</option>`)}</select></label>
+            <p class="hint span2">Joining mid-week? Pick the day you'd do next. For example, Legs if you've already done Push and Pull. The rotation continues from there.</p>
+            ${id === "bbb531" ? html`
+              <p class="hint span2">5/3/1 sets its weights from your 1-rep maxes. These are filled in from your logs and maxes where possible. Your Training Max is set to 90% of each.</p>
+              ${TM_LIFTS.map((n) => html`<label>${n} 1RM (lb)<input name="${n}" type="number" inputmode="numeric" min="0" step="5" value="${est1rm(s, n) || ""}" required></label>`)}` : ""}
+            <button class="btn span2" type="submit">Start ${p.name}</button>
             <button class="btn ghost span2" type="button" data-action="pick-program" data-id="">Cancel</button>
           </form>`
         : id === current ? "" : html`<button type="button" class="btn ghost" data-action="pick-program" data-id="${id}">${current ? "Switch to this program" : "Start this program"}</button>`}
@@ -617,13 +620,16 @@ function archiveProgram(st) {
   if (trained) (st.programHistory ??= []).push({ id: prog.id, start: prog.start, end: ui.date });
 }
 
-function startProgram(id, tm = {}) {
+const mod = (a, n) => ((a % n) + n) % n;
+
+function startProgram(id, tm = {}, day = 0) {
   const s = getState();
   const from = s.program && PROGRAMS[s.program.id];
   if (from && !confirm(`Switch from ${from.name} to ${PROGRAMS[id].name}?\n\nYour lift history, PRs and weights all carry over. Only the daily plan changes.`)) return;
   update((st) => {
     archiveProgram(st);
-    st.program = { id, start: ui.date, tm };
+    const done = sessionsBefore(st.workouts, id, ui.date);
+    st.program = { id, start: ui.date, tm, offset: mod(day - done, PROGRAMS[id].plan.length) };
     // Drop today's old-program plan if nothing was logged yet, so the new program's day loads.
     const w = st.workouts[ui.date];
     if (w?.plan && w.plan.programId !== id && !w.sets.length) { delete w.plan; w.order = []; }
@@ -654,6 +660,13 @@ function programCard(s, key, w) {
       <p class="hint">${prog.author} · ${prog.schedule}</p>
       ${shown.deload ? html`<p class="target target-deload"><span class="target-label">Deload week</span> Half the sets, same weights, easy effort. You recover, then come back stronger.</p>` : ""}
       ${loaded ? "" : html`<button type="button" class="btn full" data-action="load-session">Load today's workout</button>`}
+      <details><summary>${loaded && w.sets.length ? "Change next workout" : "Change today's workout"}</summary>
+        <form data-form="set-day" class="inline">
+          <label class="grow">${loaded && w.sets.length ? "Next workout" : "Today"}<select name="day">${prog.plan.map((d, i) => html`<option value="${i}" ${!(loaded && w.sets.length) && d.name === shown.dayName ? "selected" : ""}>Day ${i + 1}: ${d.name}</option>`)}</select></label>
+          <button class="btn" type="submit">Set</button>
+        </form>
+        <p class="hint">Missed a day, swapped days, or joined mid-week? Pick where you are and the rotation continues from there.</p>
+      </details>
       <details><summary>About this program</summary>
         <p class="small">${prog.about}</p>
         <p class="small"><strong>Best for:</strong> ${prog.bestFor}</p>
@@ -1604,9 +1617,24 @@ const forms = {
     update((s) => { s.exercises.push({ id: uid(), name: d.name.trim(), kind: d.kind, muscle: d.muscle, repMin, repMax, increment: +d.increment }); });
   },
   "start-program"(d, form) {
+    const id = form.dataset.id;
     const tm = {};
-    TM_LIFTS.forEach((n) => { tm[n] = round5(+d[n] * 0.9); });
-    startProgram(form.dataset.id, tm);
+    if (id === "bbb531") TM_LIFTS.forEach((n) => { tm[n] = round5(+d[n] * 0.9); });
+    startProgram(id, tm, +d.day || 0);
+  },
+  "set-day"(d) {
+    const day = +d.day || 0;
+    update((st) => {
+      const prog = st.program;
+      const len = PROGRAMS[prog.id].plan.length;
+      const w = st.workouts[ui.date];
+      const loadedToday = w?.plan?.programId === prog.id;
+      if (loadedToday && !w.sets.length) { delete w.plan; w.order = []; }
+      // If today's session is already logged, the choice applies to the next workout.
+      const done = sessionsBefore(st.workouts, prog.id, ui.date) + (loadedToday && w.sets.length ? 1 : 0);
+      prog.offset = mod(day - done, len);
+    });
+    toast(`Next workout: ${PROGRAMS[getState().program.id].plan[day].name}`);
   },
   prefs(d) {
     update((s) => { s.profile.diet = d.diet; s.profile.meatlessFridays = !!d.meatlessFridays; });
@@ -1721,11 +1749,8 @@ const actions = {
     });
   },
   "pick-program"(el) {
-    const id = el.dataset.id;
-    if (id === "bbb531") { ui.pickProgram = id; return render(); }
-    ui.pickProgram = null;
-    if (id) startProgram(id);
-    else render();
+    ui.pickProgram = el.dataset.id || null;
+    render();
   },
   rest(el) { startRest(+el.dataset.sec); },
   "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },

@@ -138,7 +138,8 @@ export function sessionsBefore(workouts, programId, key) {
 export function todaysSession(program, workouts, key, tmFor) {
   const done = sessionsBefore(workouts, program.id, key);
   const def = PROGRAMS[program.id];
-  const dayIndex = done % def.plan.length;
+  // offset lets someone start (or re-sync) mid-rotation, e.g. on Legs after Push and Pull.
+  const dayIndex = (done + (program.offset || 0)) % def.plan.length;
   const week = Math.floor(done / def.days);
   const deload = def.deloadEvery > 0 && (week + 1) % def.deloadEvery === 0;
   const day = def.plan[dayIndex];
