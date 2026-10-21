@@ -599,6 +599,9 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .refuel p { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink); }
 .refuel .sub-line { margin-top: 6px; color: var(--ink-2); }
 .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.done-panel { margin-top: 10px; padding: 12px 14px; background: var(--good-bg); border-left: 3px solid var(--good); border-radius: 4px; }
+.done-panel p { margin: 0 0 10px; color: var(--ink); }
+.done-panel .set-actions { margin: 0; }
 .finish-btn { margin-bottom: var(--gap); }
 .finish-more { display: block; width: 100%; margin: 0 0 var(--gap); padding: 10px 0; background: none; border: 0; color: var(--ink-2); font: 600 14px/1.2 var(--f-body); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .moves li.zone { font: 700 12px/1.2 var(--f-num); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); border-top: 0; padding: 12px 0 2px; }
