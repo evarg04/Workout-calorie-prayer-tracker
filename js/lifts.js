@@ -170,7 +170,11 @@ export function exerciseVerdict(sets, prev, baseline) {
   if (!prev && baseline?.e1rm) {
     const vs = Math.round((best / baseline.e1rm) * 100);
     if (best > baseline.e1rm + 0.01) return { kind: "up", text: `New best: est. 1RM ${Math.round(best)} lb beats the ${Math.round(baseline.e1rm)} lb max you entered.` };
-    return { kind: "new", text: `First logged session: est. 1RM ${Math.round(best)} lb, ${vs}% of your ${Math.round(baseline.e1rm)} lb max. That's right where working sets should be. This is your baseline.` };
+    // Hard working sets (a couple of reps in reserve) land around 85–100% of a true 1RM estimate.
+    const read = vs >= 85 ? "That's right where hard working sets should be."
+      : vs >= 65 ? "A lighter day than your max. Fine for settling in; push a little closer next time."
+      : "Much lighter than the max you entered. If that max was on a different machine or variation, that's normal.";
+    return { kind: "new", text: `First logged session: est. 1RM ${Math.round(best)} lb, ${vs}% of your ${Math.round(baseline.e1rm)} lb max. ${read} This is your baseline.` };
   }
   if (!prev) return { kind: "new", text: `First session logged: best set ≈ ${Math.round(best)} lb est. 1RM. This is your baseline.` };
   const vol = pct(volumeOf(sets), volumeOf(prev.sets));
