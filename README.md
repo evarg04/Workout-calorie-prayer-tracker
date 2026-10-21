@@ -18,6 +18,8 @@ A phone-friendly app for losing fat **while keeping and building muscle**, plus 
 - Pick a diet: everything, pescatarian, vegetarian, vegan, dairy-free, or gluten-free. Diet labels come from the ingredients, so they're never wrong.
 - Lenten Fridays and Ash Wednesday menus are meatless automatically. You can also choose meatless menus on every Friday.
 - **Plan 7 days** gives you a full week of menus and one combined grocery list.
+- **Ate out?** (needs your API key): type the restaurant and your order. The app searches for the restaurant's own published nutrition (falling back to reputable databases), lists each item with its source, and you check, adjust servings and log. Estimates are clearly marked.
+- **Pre-workout meal**: a daily menu slot with easy, fast-digesting options (Greek yogurt and banana, cream of rice with whey, rice cakes and turkey, and more), each with timing guidance. Turn it off in Me → Food preferences.
 - **Scan a nutrition label** (needs your API key): take a photo of a label, menu, or app screen and the calories and macros fill in. You check the numbers, set how many servings you ate, and log it with one tap. Per-100 g labels, blurry photos, and photos with no label are flagged for you to double-check.
 - **Find recipes on TikTok & the web** (needs your API key): searches TikTok creators and recipe sites for meals that fit your macros and diet, with a link to each source. Recipes you save join your menu rotation.
 
