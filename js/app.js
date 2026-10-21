@@ -4,7 +4,7 @@ import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, s
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE, substitutesFor } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
 import { APP_VERSION } from "./version.js";
-import { RAISE, mobilityFor, warmupSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP } from "./recovery.js";
+import { RAISE, mobilityFor, warmupSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP, AB_ROUTINES, AB_NOTES, CARDIO_TYPES, CARDIO_OPTIONS, caloriesBurned } from "./recovery.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
@@ -963,8 +963,107 @@ function renderTrain(s) {
     </section>
 
     ${workoutReview(s, w, key, order, exById)}
-    ${w.sets.length ? cooldownCard(dayKind(order.map((id) => exById[id]).filter(Boolean))) : ""}
-    ${w.sets.length && s.profile.sauna?.enabled ? html`<p class="hint sauna-hint">Sauna today: ${saunaPlan(s.profile.sauna.level, latestWeight(s.weights) || s.profile.weightLb).time}, about 16 oz of water first. <button type="button" class="link-btn inline-link" data-sub-go="recovery">Plan</button></p>` : ""}`;
+    ${w.sets.length ? finisherSection(s, w) : ""}
+    ${w.sets.length ? cooldownCard(dayKind(order.map((id) => exById[id]).filter(Boolean))) : ""}`;
+}
+
+// ---------- after the workout: optional abs, cardio, sauna ----------
+
+const saunaReady = (s) => !!(s.profile.sauna?.enabled && s.profile.sauna?.ackDate);
+
+// True once every exercise the program prescribed today has all its sets.
+function programComplete(w) {
+  const items = w.plan?.items || [];
+  return items.length > 0 && items.every((i) => w.sets.filter((x) => x.exId === i.exId).length >= i.sets);
+}
+
+function finisherSection(s, w) {
+  const extras = w.extras || {};
+  const weight = latestWeight(s.weights) || s.profile.weightLb;
+  return html`
+    ${!w.finished ? html`<button type="button" class="btn ghost full finish-btn" data-action="finish-open">Finish workout</button>`
+      : !(extras.abs && extras.cardio && (extras.sauna || !saunaReady(s))) ? html`<button type="button" class="finish-more" data-action="finish-open">Add abs, cardio${saunaReady(s) ? " or sauna" : ""}</button>` : ""}
+    ${extras.abs ? abCard(s) : ""}
+    ${extras.cardio ? cardioCard(s, w, weight) : ""}
+    ${extras.sauna && saunaReady(s) ? saunaMini(s, w, weight) : ""}`;
+}
+
+function finisherSheet(s, w) {
+  const sauna = saunaReady(s) ? saunaPlan(s.profile.sauna.level, latestWeight(s.weights) || s.profile.weightLb) : null;
+  return html`
+    <div class="sheet-backdrop" data-action="finish-close"></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <h2 id="sheet-title">Workout complete. Nice work.</h2>
+      <p class="hint">Want to add anything? Totally optional. Rest is part of training too.</p>
+      <div class="sheet-options">
+        <button type="button" class="sheet-opt" data-action="finish-pick" data-pick="abs"><strong>Abs</strong><span>Top, middle and bottom · about 10 min</span></button>
+        <button type="button" class="sheet-opt" data-action="finish-pick" data-pick="cardio"><strong>Cardio</strong><span>Easy 10–20 min, or short intervals</span></button>
+        ${sauna ? html`<button type="button" class="sheet-opt" data-action="finish-pick" data-pick="sauna"><strong>Sauna</strong><span>${sauna.time} · drink about 16 oz first</span></button>` : ""}
+      </div>
+      <button type="button" class="btn full" data-action="finish-pick" data-pick="done">I'm done for today</button>
+    </div>`[RAW];
+}
+
+function showFinisherSheet() {
+  closeFinisherSheet();
+  const s = getState();
+  const el = document.createElement("div");
+  el.id = "finisher";
+  el.innerHTML = finisherSheet(s, workoutFor(s, ui.date));
+  document.body.append(el);
+}
+
+function closeFinisherSheet() { document.getElementById("finisher")?.remove(); }
+
+function abCard(s) {
+  const kind = ui.abKind || "gym";
+  const r = AB_ROUTINES[kind];
+  let zone = "";
+  return html`
+    <section class="card abs-card" id="abs-card">
+      <div class="sec-head"><h2>Abs: top, middle, bottom</h2><span class="sec-meta">${r.time}</span></div>
+      <div class="seg-tabs">${Object.entries(AB_ROUTINES).map(([k, v]) => html`<button type="button" class="${k === kind ? "is-on" : ""}" data-action="ab-kind" data-kind="${k}">${v.label}</button>`)}</div>
+      <ul class="moves">${r.moves.map(([z, name, sets, dose]) => {
+        const head = z !== zone ? html`<li class="zone">${z}</li>` : "";
+        zone = z;
+        const how = exerciseInfo(name)?.how;
+        return html`${head}<li><div class="move-top"><strong>${name}</strong><span class="move-dose">${sets} × ${dose}</span></div>${how?.cues?.[0] ? html`<span class="sub-line">${how.cues[0]}</span>` : ""}</li>`;
+      })}</ul>
+      <button type="button" class="btn full" data-action="add-abs" data-kind="${kind}">Add these to today's workout to log them</button>
+      <details><summary>Tips and the science</summary><ul class="evidence">${AB_NOTES.map((n) => html`<li>${n}</li>`)}</ul></details>
+    </section>`;
+}
+
+function cardioCard(s, w, weight) {
+  const logged = w.cardio || [];
+  return html`
+    <section class="card" id="cardio-card">
+      <div class="sec-head"><h2>Cardio</h2>${logged.length ? html`<span class="sec-meta">${logged.reduce((t, c) => t + c.min, 0)} min logged</span>` : ""}</div>
+      <ul class="moves">${CARDIO_OPTIONS.map((o) => html`<li><div class="move-top"><strong>${o.name} <span class="chip ${o.tag === "recommended" ? "chip-good" : "chip-new"}">${o.tag}</span></strong><span class="move-dose">${o.dose}</span></div>
+        <span class="sub-line">${o.how}</span><span class="sub-line">${o.why}</span></li>`)}</ul>
+      <form data-form="log-cardio" class="grid-form">
+        <label>Type<select name="type">${Object.entries(CARDIO_TYPES).map(([k, v]) => html`<option value="${k}">${v.label}</option>`)}</select></label>
+        <label>Minutes<input name="min" type="number" inputmode="numeric" min="1" max="180" value="15"></label>
+        <button class="btn span2" type="submit">Log cardio</button>
+      </form>
+      ${logged.length ? html`<ul class="entries">${logged.map((c, i) => html`<li><span>${CARDIO_TYPES[c.type]?.label || c.type} · ${c.min} min<span class="sub-line">about ${caloriesBurned(CARDIO_TYPES[c.type]?.met || 6, weight, c.min)} kcal</span></span><button type="button" class="icon-btn" data-action="del-cardio" data-i="${i}" aria-label="Delete cardio">✕</button></li>`)}</ul>` : ""}
+      <p class="hint">Calorie estimates use standard exercise values for your weight. They aren't added to your food target, so the burn helps your cut instead of being eaten back.</p>
+    </section>`;
+}
+
+function saunaMini(s, w, weight) {
+  const plan = saunaPlan(s.profile.sauna.level, weight);
+  return html`
+    <section class="card" id="sauna-card">
+      <div class="sec-head"><h2>Sauna</h2><span class="sec-meta">${plan.time} · ${plan.rounds.split(",")[0]}</span></div>
+      <p class="line">Drink about 16 oz of water first. Weigh before and after; keep the loss under ${plan.limitLb} lb.</p>
+      <p class="target target-deload"><span class="target-label">Get out right away if you feel</span> ${SAUNA_STOP.join(", ").toLowerCase()}.</p>
+      <form data-form="log-sauna" class="inline">
+        <label class="grow">Minutes in the sauna<input name="min" type="number" inputmode="numeric" min="1" max="60" value="${w.sauna?.min || ""}"></label>
+        <button class="btn" type="submit">Log</button>
+      </form>
+      <button type="button" class="link-btn" data-sub-go="recovery">Full sauna plan</button>
+    </section>`;
 }
 
 // ---------- type or paste a whole workout ----------
@@ -1158,26 +1257,28 @@ function workoutReview(s, w, key, order, exById) {
     if (rxItem?.detail) {
       const missed = feedbackFor(s, ex, rxItem, prev, sets).some((f) => f.level === "warn");
       verdict = missed ? { kind: "down", text: "Missed prescribed reps on at least one set." } : { kind: "up", text: "Every prescribed set completed." };
-    } else verdict = exerciseVerdict(sets, prev);
+    } else verdict = exerciseVerdict(sets, prev, s.baselines?.[id]);
     const exRx = rxItem && !rxItem.detail ? { ...ex, repMin: rxItem.repMin, repMax: rxItem.repMax, sets: rxItem.sets } : ex;
     const next = rxItem?.detail ? "Next time: follow the next 5/3/1 week." : `Next time: ${suggestNext(exRx, { ...s.workouts, [key]: w }, addDays(key, 1), rx || undefined, s.baselines?.[ex.id]).note.replace(/^Last: .*?Today: /, "")}`;
-    const prs = sets.filter((x) => isPR(s.workouts, id, x, key)).length;
+    const prs = sets.filter((x) => isPR(s.workouts, id, x, key, s.baselines?.[id])).length;
     return { ex, verdict, next, prs, volume: sets.reduce((t, x) => t + (+x.weight || 0) * +x.reps, 0) };
   }).filter(Boolean);
   if (!rows.length) return "";
   const count = (k) => rows.filter((r) => r.verdict.kind === k).length;
   const prs = rows.reduce((t, r) => t + r.prs, 0);
   const volume = rows.reduce((t, r) => t + r.volume, 0);
-  const headline = count("down") > count("up") ? "Tough day. Recover well and come back stronger." : count("up") ? "You're progressing. This is how muscle is built and kept." : "Solid work. Next session, push for one more rep.";
+  const headline = count("new") === rows.length ? "First session on these lifts: your baselines are set. Next time, each card shows exactly what to beat."
+    : count("down") > count("up") ? "Tough day. Recover well and come back stronger."
+    : count("up") ? "You're progressing. This is how muscle is built and kept." : "Solid work. Next session, push for one more rep.";
   return html`
     <section class="card review">
-      <div class="sec-head"><h2>Coach's review</h2><span class="sec-meta">${Math.round(volume).toLocaleString()} lb moved</span></div>
+      <div class="sec-head"><h2>Coach's review</h2><span class="sec-meta">${Math.round(volume).toLocaleString()} lb moved${prs ? ` · ${prs} PR${prs === 1 ? "" : "s"}` : ""}</span></div>
       <p class="review-headline">${headline}</p>
       <div class="stats stats-4">
         ${stat("Progressed", count("up"), "lifts", count("up") ? "good" : "")}
         ${stat("Held", count("same"), "lifts")}
         ${stat("Down", count("down"), "lifts", count("down") ? "bad" : "")}
-        ${stat("PRs", prs, "today", prs ? "good" : "")}
+        ${count("new") ? stat("Baselines", count("new"), "set today", "good") : stat("PRs", prs, "today", prs ? "good" : "")}
       </div>
       <ul class="review-list">${rows.map((r) => html`
         <li><div class="review-row"><strong>${r.ex.name}</strong><span class="chip chip-${r.verdict.kind}">${VERDICT_LABEL[r.verdict.kind]}</span>${r.prs ? html`<span class="tag pr">${r.prs} PR</span>` : ""}</div>
@@ -1248,7 +1349,7 @@ function exerciseCard(s, ex, w, key, open = true) {
   const rest = rxItem?.rest;
   const prev = prevSession(s, ex, rx, key);
   const feedback = feedbackFor(s, ex, rxItem, prev, sets);
-  const verdict = !rxItem?.detail && sets.length ? exerciseVerdict(sets, prev) : null;
+  const verdict = !rxItem?.detail && sets.length ? exerciseVerdict(sets, prev, s.baselines?.[ex.id]) : null;
   const inc = ex.increment || 5;
   const how = howOf(ex);
   const done = rxItem && sets.length >= rxItem.sets;
@@ -1260,7 +1361,7 @@ function exerciseCard(s, ex, w, key, open = true) {
       <li class="set-row fb-${fb.level}">
         <span class="set-n">${i + 1}</span>
         <span class="set-val"><strong>${x.weight}</strong><small> lb</small> × <strong>${x.reps}</strong>${x.rir !== undefined && x.rir !== "" ? html`<small> @${x.rir} RIR</small>` : ""}</span>
-        ${isPR(s.workouts, ex.id, x, key) ? html`<span class="tag pr">PR</span>` : ""}
+        ${isPR(s.workouts, ex.id, x, key, s.baselines?.[ex.id]) ? html`<span class="tag pr">PR</span>` : ""}
         <span class="delta delta-${fb.dir}" title="vs same set last session">${deltaText(fb)}</span>
         <button type="button" class="icon-btn" data-action="del-set" data-id="${x.id}" aria-label="Delete set ${i + 1}">✕</button>
         <p class="set-note">${fb.notes.join(" ")}</p>
@@ -2024,12 +2125,16 @@ const forms = {
     const set = { id: uid(), exId: form.dataset.ex, weight: +d.weight, reps: +d.reps };
     if (d.rir !== "" && d.rir !== undefined) set.rir = +d.rir;
     if (form.dataset.rx) set.rx = form.dataset.rx;
+    let justFinished = false;
     update((s) => {
       const w = ensureWorkout(s, ui.date);
+      const wasComplete = programComplete(w);
       w.sets.push(set);
       const rxItem = w.plan?.items?.find((i) => i.exId === set.exId);
       if (w.sets.filter((x) => x.exId === set.exId).length >= (rxItem?.sets ?? 99)) ui.openEx = null;
+      justFinished = !wasComplete && programComplete(w) && !w.finished;
     });
+    if (justFinished) { stopRest(); return showFinisherSheet(); }
     if (form.dataset.rest) startRest(+form.dataset.rest);
   },
   "new-ex"(d) {
@@ -2055,6 +2160,16 @@ const forms = {
       prog.offset = mod(day - done, len);
     });
     toast(`Next workout: ${PROGRAMS[getState().program.id].plan[day].name}`);
+  },
+  "log-cardio"(d) {
+    const min = Math.max(1, Math.min(180, +d.min || 0));
+    update((st) => { (ensureWorkout(st, ui.date).cardio ??= []).push({ type: d.type, min }); });
+    toast(`${min} min of cardio logged`);
+  },
+  "log-sauna"(d) {
+    const min = Math.max(0, Math.min(60, +d.min || 0));
+    update((st) => { ensureWorkout(st, ui.date).sauna = min ? { min } : undefined; });
+    toast(min ? `${min} min sauna logged. Rehydrate well` : "Cleared");
   },
   "sauna-on"(d) {
     if (!d.ack) return toast("Please read and check the safety list first");
@@ -2195,6 +2310,36 @@ const actions = {
     render();
   },
   rest(el) { startRest(+el.dataset.sec); },
+  "finish-open"() { showFinisherSheet(); },
+  "finish-close"() { closeFinisherSheet(); },
+  "finish-pick"(el) {
+    const pick = el.dataset.pick;
+    closeFinisherSheet();
+    update((st) => {
+      const w = ensureWorkout(st, ui.date);
+      w.finished = true;
+      if (pick !== "done") (w.extras ??= {})[pick] = true;
+    });
+    if (pick === "done") return toast("Great session. Recovery is where you grow. Rest up.");
+    document.getElementById(`${pick}-card`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  },
+  "ab-kind"(el) { ui.abKind = el.dataset.kind; render(); document.getElementById("abs-card")?.scrollIntoView({ block: "start" }); },
+  "add-abs"(el) {
+    const r = AB_ROUTINES[el.dataset.kind];
+    update((st) => {
+      const w = ensureWorkout(st, ui.date);
+      for (const [, name, sets] of r.moves) {
+        const info = exerciseInfo(name);
+        const ex = ensureExercise(st, name, info?.repMin, info?.repMax);
+        if (!w.order.includes(ex.id)) w.order.push(ex.id);
+        if (w.plan?.items && !w.plan.items.some((i) => i.exId === ex.id)) {
+          w.plan.items.push({ name, exId: ex.id, sets, repMin: info.repMin, repMax: info.repMax, rest: 40, note: "", extra: true });
+        }
+      }
+    });
+    toast("Ab exercises added below. Log them like any other lift");
+  },
+  "del-cardio"(el) { update((st) => { ensureWorkout(st, ui.date).cardio.splice(+el.dataset.i, 1); }); },
   "swap-ex"(el) {
     const always = !!el.closest("details")?.querySelector('input[name="always"]')?.checked;
     let toId;

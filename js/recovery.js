@@ -154,3 +154,56 @@ export const SAUNA_AVOID = [
 export const SAUNA_STOP = [
   "Dizziness or light-headedness", "Nausea", "Headache", "Racing or pounding heart", "Feeling confused or unusually weak",
 ];
+
+// ---------- ab workout: top, middle and bottom of the core ----------
+// [zone, exercise, sets, dose]
+export const AB_ROUTINES = {
+  gym: {
+    label: "Gym", time: "about 10 min",
+    moves: [
+      ["Top (upper abs)", "Cable Crunch", 3, "12–15 reps"],
+      ["Middle (obliques & deep core)", "Pallof Press", 3, "10 each side"],
+      ["Middle (obliques & deep core)", "Side Plank Hip Dip", 2, "10 each side"],
+      ["Bottom (lower abs)", "Hanging Leg Raise", 3, "10–15 reps"],
+    ],
+  },
+  floor: {
+    label: "No equipment", time: "about 8 min",
+    moves: [
+      ["Top (upper abs)", "Crunch", 3, "15–20 reps"],
+      ["Middle (obliques & deep core)", "Bicycle Crunch", 3, "20 (10 each side)"],
+      ["Middle (obliques & deep core)", "Side Plank Hip Dip", 2, "10 each side"],
+      ["Bottom (lower abs)", "Reverse Crunch", 3, "12–15 reps"],
+      ["Bottom (lower abs)", "Dead Bug", 2, "10 each side"],
+    ],
+  },
+};
+
+export const AB_NOTES = [
+  "Rest 30–45 seconds between sets. Move slowly and squeeze; control beats speed.",
+  "Your six-pack (rectus abdominis) is one muscle, but which end moves changes the emphasis: crunches bias the top, lifting the pelvis biases the bottom. The obliques and deep core wrap around the middle.",
+  "Abs show when body fat is low enough. Your cut is what reveals them; this routine makes them stronger and thicker underneath.",
+  "Train abs 2–3 times a week. When a set feels easy at the top of the range, slow the lowering down or add a little weight.",
+];
+
+// ---------- cardio after lifting ----------
+// MET values from the Compendium of Physical Activities (Ainsworth et al., 2011).
+export const CARDIO_TYPES = {
+  walk: { label: "Incline walk", met: 6.0 },
+  bike: { label: "Stationary bike, moderate", met: 6.8 },
+  elliptical: { label: "Elliptical, moderate", met: 5.0 },
+  rower: { label: "Rower, moderate", met: 7.0 },
+  stairs: { label: "Stair climber", met: 9.0 },
+  jog: { label: "Jog", met: 7.0 },
+};
+
+export const CARDIO_OPTIONS = [
+  { name: "Easy steady cardio", tag: "recommended", dose: "10–20 min",
+    how: "Incline walk, bike or elliptical at a pace where you can talk in full sentences but not sing.",
+    why: "Adds calorie burn and heart health without cutting into recovery, so your lifts keep progressing during the cut." },
+  { name: "Intervals", tag: "optional", dose: "6–8 rounds · about 15 min",
+    how: "Bike or rower: 30 seconds hard, 90 seconds easy. Skip after a heavy leg day.",
+    why: "Builds conditioning fast in less time; it's harder to recover from, so keep it to 1–2 times a week." },
+];
+
+export const caloriesBurned = (met, weightLb, minutes) => Math.round((met * 3.5 * (weightLb * 0.4536)) / 200 * minutes);
