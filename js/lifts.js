@@ -111,13 +111,16 @@ export function setFeedback({ ex, set, index, prev, repMin, repMax, totalSets })
   }
 
   const p = prev?.sets?.[index];
+  let delta = "", dir = "none";
   if (p) {
     const now = e1rm(w, r), then = e1rm(+p.weight, +p.reps);
     const diff = pct(now, then);
-    const what = w > +p.weight ? `+${w - p.weight} lb` : w < +p.weight ? `${w - p.weight} lb` : r > +p.reps ? `+${r - p.reps} rep${r - p.reps > 1 ? "s" : ""}` : r < +p.reps ? `${r - p.reps} reps` : "";
-    if (diff > 0.4) notes.unshift(`Progressive overload ✓ ${what} vs set ${index + 1} last time (${p.weight}×${p.reps}).`);
-    else if (diff >= -0.4) { notes.unshift(`Matched last time (${p.weight}×${p.reps}). Next time beat it by one rep.`); worse("ok"); }
-    else { notes.unshift(`Down vs last time (${p.weight}×${p.reps}). Rest longer between sets; if it happens two sessions running, the app will deload you.`); worse("warn"); }
+    const plural = (n) => (Math.abs(n) === 1 ? "rep" : "reps");
+    const what = w > +p.weight ? `+${w - p.weight} lb` : w < +p.weight ? `−${p.weight - w} lb` : r > +p.reps ? `+${r - p.reps} ${plural(r - p.reps)}` : r < +p.reps ? `−${p.reps - r} ${plural(r - p.reps)}` : "";
+    delta = what || "=";
+    if (diff > 0.4) { dir = "up"; notes.unshift(`Progressive overload: ${what} vs last time (${p.weight}×${p.reps}).`); }
+    else if (diff >= -0.4) { dir = "same"; delta = "="; notes.unshift(`Matched last time (${p.weight}×${p.reps}). Next time beat it by one rep.`); worse("ok"); }
+    else { dir = "down"; notes.unshift(`Down vs last time (${p.weight}×${p.reps}). Rest longer between sets; if it happens two sessions running, the app will deload you.`); worse("warn"); }
   } else if (!prev) {
     notes.unshift("Baseline recorded. Next session, beat this set.");
   }
@@ -129,7 +132,7 @@ export function setFeedback({ ex, set, index, prev, repMin, repMax, totalSets })
     else if (rir === 0) notes.push("Taken to failure: fine on a final set, but don't make it a habit on the big lifts.");
     else if (rir <= 3) notes.push(`${rir} rep${rir === 1 ? "" : "s"} in reserve: right in the growth zone.`);
   }
-  return { level, notes };
+  return { level, notes, delta, dir };
 }
 
 const volumeOf = (sets) => sets.reduce((t, s) => t + (+s.weight || 1) * +s.reps, 0);
@@ -142,7 +145,7 @@ export function exerciseVerdict(sets, prev) {
   const vol = pct(volumeOf(sets), volumeOf(prev.sets));
   const strength = pct(best, bestE1rm(prev.sets));
   const fmt = (x) => `${x >= 0 ? "+" : ""}${x.toFixed(1)}%`;
-  if (strength > 0.4 || (vol > 2 && strength > -0.4)) return { kind: "up", text: `Progressed: est. 1RM ${fmt(strength)}, volume ${fmt(vol)} vs last session.` };
-  if (strength >= -0.4 && vol >= -2) return { kind: "same", text: `Held steady (est. 1RM ${fmt(strength)}, volume ${fmt(vol)}). Add one rep to a set next time.` };
-  return { kind: "down", text: `Below last session (est. 1RM ${fmt(strength)}, volume ${fmt(vol)}). Check sleep, food, and rest times. One off day is normal.` };
+  if (strength > 0.4 || (vol > 2 && strength > -0.4)) return { kind: "up", text: `Est. 1RM ${fmt(strength)}, volume ${fmt(vol)} vs last session.` };
+  if (strength >= -0.4 && vol >= -2) return { kind: "same", text: `Est. 1RM ${fmt(strength)}, volume ${fmt(vol)}. Add one rep to a set next time.` };
+  return { kind: "down", text: `Est. 1RM ${fmt(strength)}, volume ${fmt(vol)} vs last session. Check sleep, food, and rest times. One off day is normal.` };
 }

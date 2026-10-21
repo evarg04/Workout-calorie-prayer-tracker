@@ -17,7 +17,14 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const val = (v) => (Array.isArray(v) ? v.map(val).join("") : v && v[RAW] !== undefined ? v[RAW] : v === false || v == null ? "" : esc(v));
 const html = (strings, ...vals) => raw(strings.reduce((out, s, i) => out + s + (i < vals.length ? val(vals[i]) : ""), ""));
 
-const ui = { tab: location.hash.slice(1) || "today", date: dateKey(), chartEx: null, gospel: {}, busy: {}, exQuery: "", exPick: null, exLookup: null, coach: {} };
+const ui = { tab: location.hash.slice(1) || "today", date: dateKey(), chartEx: null, gospel: {}, busy: {}, exQuery: "", exPick: null, exLookup: null, coach: {},
+  sub: { food: "menu", train: "workout", faith: "today" } };
+
+const SUBS = {
+  food: [["menu", "Menu"], ["log", "Log"], ["recipes", "Find recipes"]],
+  train: [["workout", "Workout"], ["progress", "Progress"], ["programs", "Programs"]],
+  faith: [["today", "Today"], ["pray", "Pray"], ["ledger", "Ledger"]],
+};
 const view = document.getElementById("view");
 const round = (n) => Math.round(n);
 const fmtDate = (k, opts = { weekday: "short", month: "short", day: "numeric" }) => parseKey(k).toLocaleDateString(undefined, opts);
@@ -33,31 +40,50 @@ function bar(label, have, goal, unit, cls, overIsBad = true) {
   const over = overIsBad && have > goal * 1.05;
   return html`
     <div class="bar-row">
-      <div class="bar-label"><span>${label}</span><span><strong>${round(have)}</strong> / ${round(goal)}${unit}</span></div>
+      <span class="bar-name">${label}</span>
       <div class="bar ${cls}${over ? " over" : ""}" role="progressbar" aria-valuenow="${round(have)}" aria-valuemax="${round(goal)}" aria-label="${label}">
         <div style="width:${pct.toFixed(1)}%"></div>
       </div>
+      <span class="bar-val"><strong>${round(have)}</strong>/${round(goal)}${unit}</span>
     </div>`;
 }
 
 function macroBlock(t, target) {
   const left = target.calories - t.cal;
   return html`
-    <div class="hero">
-      <div class="hero-num">${round(Math.abs(left))}</div>
-      <div class="hero-label">${left >= 0 ? "calories left" : "calories over"} · ${round(t.cal)} eaten of ${target.calories}</div>
+    <div class="fuel">
+      <div class="fuel-kcal">
+        <span class="num-xl">${round(Math.abs(left)).toLocaleString()}</span>
+        <span class="label">${left >= 0 ? "kcal left" : "kcal over"}</span>
+        <span class="meta">${round(t.cal).toLocaleString()} of ${target.calories.toLocaleString()}</span>
+      </div>
+      <div class="fuel-bars">
+        ${bar("Protein", t.p, target.protein, "g", "protein", false)}
+        ${bar("Carbs", t.c, target.carbs, "g", "carbs")}
+        ${bar("Fat", t.f, target.fat, "g", "fat")}
+      </div>
     </div>
-    ${bar("Protein", t.p, target.protein, "g", "protein", false)}
-    ${bar("Carbs", t.c, target.carbs, "g", "carbs")}
-    ${bar("Fat", t.f, target.fat, "g", "fat")}
-    <p class="small muted">${t.p >= target.protein * 0.9 ? "✅ Protein goal reached — muscle protected." : `${round(target.protein - t.p)} g protein to go — prioritize it at your next meal.`}</p>`;
+    <p class="hint">${t.p >= target.protein * 0.9 ? "Protein goal reached. Muscle protected." : `${round(target.protein - t.p)} g protein to go. Put it in your next meal.`}</p>`;
 }
 
-const STATUS = { good: ["✅", "On pace"], warning: ["⚠️", "Needs attention"], serious: ["⛔", "Off pace"] };
+function stat(label, value, meta, tone = "") {
+  return html`<div class="stat ${tone ? `stat-${tone}` : ""}"><span class="stat-label">${label}</span><span class="stat-value">${value}</span><span class="stat-meta">${meta}</span></div>`;
+}
+
+function dayHead(key, title, extra = "") {
+  return html`
+    <section class="day-head">
+      <div class="day-date">${fmtDate(key, { weekday: "long", month: "long", day: "numeric" })}</div>
+      <div class="day-title">${title}</div>
+      ${extra}
+    </section>`;
+}
+
+const STATUS = { good: "On pace", warning: "Needs attention", serious: "Off pace" };
 
 function penanceCard(key) {
   const note = penanceNote(liturgicalDay(key));
-  return note ? html`<section class="card penance"><h3>🐟 ${note.title}</h3><p>${note.body}</p></section>` : "";
+  return note ? html`<section class="card penance"><h3>${note.title}</h3><p>${note.body}</p></section>` : "";
 }
 
 function dayFaith(s, key) {
@@ -71,7 +97,7 @@ function ruleItems(s, key) {
   const f = dayFaith(s, key);
   return [
     { id: "offering", label: "Morning Offering", hint: "Give the whole day to God before anything else." },
-    { id: "gospel", label: "Read the daily Gospel", hint: "Lectio Divina below." },
+    { id: "gospel", label: "Read the daily Gospel", hint: "Pray with it using Lectio Divina, under Pray." },
     { id: "angelus", label: lit.easterSeason ? "Regina Caeli at noon" : "The Angelus at noon", hint: "Stop wherever you are, 2 minutes." },
     { id: "workout", label: "Offered my workout", hint: "Set an intention on the Train tab.", auto: !!s.workouts[key]?.offered },
     { id: "rosary", label: `Rosary — ${mysteriesFor(key).set} Mysteries`, hint: "Even one decade counts. Great for a walk or cardio." },
@@ -104,52 +130,52 @@ function renderToday(s) {
   const w = s.workouts[key];
   const setCount = w?.sets?.length || 0;
   const rule = ruleItems(s, key);
+  const ruleDone = rule.filter((i) => i.done).length;
   const virtue = virtueOfWeek(key);
-  const [icon, label] = STATUS[verdict.level];
+  const left = target.calories - t.cal;
+  const prog = s.program && PROGRAMS[s.program.id];
+  const exCount = new Set((w?.sets || []).map((x) => x.exId)).size;
 
   return html`
-    <section class="card season season-${lit.color}">
-      <div class="small">${fmtDate(key, { weekday: "long", month: "long", day: "numeric" })}</div>
-      <div class="season-name">${lit.season}</div>
-      <div class="small">Virtue of the week: <strong>${virtue.name}</strong> — ${virtue.body}</div>
-    </section>
+    ${dayHead(key, lit.season, html`<p class="day-note"><span class="eyebrow">Virtue of the week</span> ${virtue.name}. ${virtue.body}</p>`)}
+
+    <div class="stats">
+      ${stat(left >= 0 ? "kcal left" : "kcal over", round(Math.abs(left)).toLocaleString(), `${round(t.cal).toLocaleString()} / ${target.calories.toLocaleString()}`, left < 0 ? "bad" : "")}
+      ${stat("Protein", `${round(t.p)}`, `of ${target.protein} g`, t.p >= target.protein * 0.9 ? "good" : "")}
+      ${stat("Weight trend", trend ? `${trend.perWeek > 0 ? "+" : ""}${trend.perWeek.toFixed(1)}` : "—", trend ? "lb per week" : "needs 1 week of data")}
+      ${stat("Rule of life", `${ruleDone}/${rule.length}`, `${ruleStreak(s)}-day streak`, ruleDone >= 5 ? "good" : "")}
+    </div>
 
     ${penanceCard(key)}
 
-    <section class="card">
-      <h2>Fuel</h2>
-      ${macroBlock(t, target)}
-      <button type="button" class="btn" data-goto="food">Log food</button>
-    </section>
-
     <section class="card status status-${verdict.level}">
-      <h2>${icon} ${label}</h2>
-      <ul>${verdict.msgs.map((m) => html`<li>${m}</li>`)}</ul>
+      <div class="sec-head"><h2>Pace</h2><span class="chip chip-${verdict.level}">${STATUS[verdict.level]}</span></div>
+      <ul class="status-list">${verdict.msgs.map((m) => html`<li>${m}</li>`)}</ul>
     </section>
 
     <section class="card">
-      <h2>Bodyweight</h2>
+      <div class="sec-head"><h2>Fuel</h2><button type="button" class="link-btn" data-goto="food" data-sub="log">Log food</button></div>
+      ${macroBlock(t, target)}
+    </section>
+
+    <section class="card">
+      <div class="sec-head"><h2>Training</h2><button type="button" class="link-btn" data-goto="train" data-sub="workout">${setCount ? "Continue" : "Start"}</button></div>
+      ${prog ? html`<p class="line"><span class="eyebrow">${prog.name}</span> ${w?.plan?.dayName || todaysSession(s.program, s.workouts, key, tmFor(s)).dayName}</p>` : html`<p class="line muted">No program yet. Pick one under Train, then Programs.</p>`}
+      <p class="line">${setCount ? `${setCount} set${setCount === 1 ? "" : "s"} across ${exCount} exercise${exCount === 1 ? "" : "s"}` : "Nothing logged yet today."}${w?.intention ? html`. Offered for <em>${w.intention}</em>` : ""}</p>
+    </section>
+
+    <section class="card">
+      <div class="sec-head"><h2>Bodyweight</h2>${s.weights[key] ? html`<span class="sec-meta">${s.weights[key]} lb today</span>` : ""}</div>
       <form class="inline" data-form="weight">
-        <label class="grow">Weigh-in (lb)<input name="lb" type="number" step="0.1" inputmode="decimal" value="${s.weights[key] ?? ""}" placeholder="e.g. 198.4" required></label>
+        <label class="grow">Morning weigh-in (lb)<input name="lb" type="number" step="0.1" inputmode="decimal" value="${s.weights[key] ?? ""}" placeholder="198.4" required></label>
         <button class="btn" type="submit">Save</button>
       </form>
       <div id="weight-chart"></div>
     </section>
 
     <section class="card">
-      <h2>Train</h2>
-      ${s.program && PROGRAMS[s.program.id] ? html`<p class="small muted">${PROGRAMS[s.program.id].name} · today: <strong>${w?.plan?.dayName || todaysSession(s.program, s.workouts, key, tmFor(s)).dayName}</strong></p>` : ""}
-      ${setCount
-        ? html`<p>${setCount} set${setCount === 1 ? "" : "s"} logged${w.intention ? html` · offered for <em>${w.intention}</em>` : ""}.</p>`
-        : html`<p class="muted">No workout logged today.</p>`}
-      <button type="button" class="btn" data-goto="train">${setCount ? "Continue workout" : "Start workout"}</button>
-    </section>
-
-    <section class="card">
-      <h2>Rule of Life · ${rule.filter((i) => i.done).length}/${rule.length}</h2>
-      <p class="small muted">🔥 ${ruleStreak(s)}-day streak (5+ of 7 practices)</p>
-      <ul class="mini-rule">${rule.map((i) => html`<li class="${i.done ? "done" : ""}">${i.done ? "✔" : "○"} ${i.label}</li>`)}</ul>
-      <button type="button" class="btn" data-goto="faith">Open Faith</button>
+      <div class="sec-head"><h2>Rule of life</h2><button type="button" class="link-btn" data-goto="faith" data-sub="today">Open</button></div>
+      <ul class="mini-rule">${rule.map((i) => html`<li class="${i.done ? "done" : ""}"><span class="tick" aria-hidden="true"></span>${i.label}<span class="sr-only">${i.done ? " (done)" : " (not yet)"}</span></li>`)}</ul>
     </section>`;
 }
 
@@ -212,20 +238,24 @@ function menuItem({ slot, recipe, mult, logged }, idx) {
   const m = scaled(recipe, mult);
   return html`
     <div class="menu-item">
-      <div class="menu-head"><span class="slot-label">${label}</span>${logged ? html`<span class="tag ok">✓ Logged</span>` : ""}</div>
-      <div class="menu-name">${recipe.name} <span class="small muted">× ${mult} serving${mult === 1 ? "" : "s"}</span></div>
-      <div class="small muted">${round(m.cal)} kcal · ${round(m.p)}P ${round(m.c)}C ${round(m.f)}F</div>
-      ${recipe.note ? html`<div class="tiny note">✨ ${recipe.note}</div>` : ""}
+      <div class="menu-head">
+        <span class="slot-label">${label}</span>
+        <span class="menu-actions">
+          <button type="button" class="btn ghost btn-sm" data-action="swap-meal" data-slot="${slot}">Swap</button>
+          ${logged ? html`<span class="tag ok">Logged</span>` : html`<button type="button" class="btn btn-sm" data-action="log-meal" data-idx="${idx}">Log it</button>`}
+        </span>
+      </div>
+      <div class="menu-row">
+        <div class="menu-name">${recipe.name}${mult !== 1 ? html` <span class="mult">×${mult}</span>` : ""}</div>
+        <div class="macros"><strong>${round(m.cal)}</strong> kcal<span>${round(m.p)}P · ${round(m.c)}C · ${round(m.f)}F</span></div>
+      </div>
+      ${recipe.note ? html`<div class="note">${recipe.note}</div>` : ""}
       ${recipe.source ? html`<div class="tiny"><a href="${recipe.source.url}" target="_blank" rel="noopener">${recipe.source.name} ↗</a>${recipe.estimated ? " · macros estimated" : ""}</div>` : ""}
       <details><summary>Recipe</summary>
         <ul class="ingredients">${(recipe.ingredients || []).map((ing) => (typeof ing === "string" ? html`<li>${ing}</li>` : html`<li>${fmtGrams(ing.g * mult)} ${ing.name}</li>`))}</ul>
         ${recipe.source && mult !== 1 ? html`<p class="tiny muted">Quantities are for 1 serving; make ${mult}.</p>` : ""}
         <ol class="steps">${(recipe.steps || []).map((x) => html`<li>${x}</li>`)}</ol>
       </details>
-      <div class="row">
-        <button type="button" class="btn ghost btn-sm" data-action="swap-meal" data-slot="${slot}">↻ Swap</button>
-        <button type="button" class="btn btn-sm" data-action="log-meal" data-idx="${idx}" ${logged ? "disabled" : ""}>${logged ? "Logged" : "Log it"}</button>
-      </div>
     </div>`;
 }
 
@@ -237,16 +267,19 @@ function menuCard(s, key) {
   const lit = liturgicalDay(key);
   return html`
     <section class="card">
-      <h2>🍽️ Today's menu</h2>
-      <p class="small muted">${DIETS[plan.diet]?.label || "Everything"}${plan.meatless ? " · meatless today 🐟" : ""} · portions scaled to your targets</p>
+      <div class="sec-head"><h2>Today's menu</h2><span class="sec-meta">${DIETS[plan.diet]?.label || "Everything"}${plan.meatless ? " · meatless" : ""}</span></div>
       ${lit.fastDay ? html`<p class="small warn-text">Fast day: one full meal and two small ones that don't add up to a full meal. Use this menu as a guide, not a target.</p>` : ""}
       ${items.map((i, idx) => menuItem(i, idx))}
-      <p class="menu-total">Menu: <strong>${round(t.cal)}</strong> / ${target.calories} kcal · <strong>${round(t.p)}</strong> / ${target.protein} g protein · ${round(t.c)} g carbs · ${round(t.f)} g fat</p>
+      <div class="menu-total">
+        <span><strong>${round(t.cal)}</strong> / ${target.calories} kcal</span>
+        <span><strong>${round(t.p)}</strong> / ${target.protein} g protein</span>
+        <span>${round(t.c)} C · ${round(t.f)} F</span>
+      </div>
       <div class="row">
         <button type="button" class="btn ghost" data-action="new-menu">New menu</button>
         <button type="button" class="btn" data-action="log-menu">Log whole menu</button>
       </div>
-      ${ui.grocery ? groceryBlock(s, key) : html`<button type="button" class="btn ghost full" data-action="grocery">🛒 Plan 7 days + grocery list</button>`}
+      ${ui.grocery ? groceryBlock(s, key) : html`<button type="button" class="btn ghost full" data-action="grocery">Plan 7 days and make a grocery list</button>`}
     </section>`;
 }
 
@@ -258,7 +291,7 @@ function groceryBlock(s, key) {
   return html`
     <h3>Next 7 days</h3>
     <ul class="week-plan">${days.map((k, i) => html`<li><strong>${fmtDate(k)}</strong>: ${hydrate(plans[i], pool).map((x) => x.recipe.name).join(" · ")}</li>`)}</ul>
-    <h3>🛒 Grocery list</h3>
+    <h3>Grocery list</h3>
     <ul class="grocery">${list.items.map((x) => html`<li><label class="check"><input type="checkbox"> ${fmtGrams(x.g)} ${x.name}</label></li>`)}</ul>
     ${list.extras.length ? html`<p class="small muted">Plus, for web recipes:</p><ul class="small">${list.extras.map((x) => html`<li>${x}</li>`)}</ul>` : ""}
     <button type="button" class="btn ghost" data-action="grocery">Hide</button>`;
@@ -267,7 +300,7 @@ function groceryBlock(s, key) {
 function webRecipesCard(s) {
   return html`
     <section class="card">
-      <h2>🔎 Find recipes on TikTok & the web</h2>
+      <div class="sec-head"><h2>Find recipes on TikTok and the web</h2></div>
       ${s.settings.apiKey ? html`
         <p class="small muted">Searches TikTok creators and recipe sites for meals that fit your macros. Saved recipes join your menu rotation, with a link to the source.</p>
         <form data-form="web-recipes" class="grid-form">
@@ -283,7 +316,7 @@ function webRecipesCard(s) {
           <div class="menu-name">${r.name}</div>
           <div class="small muted">${round(r.per.cal)} kcal · ${round(r.per.p)}P ${round(r.per.c)}C ${round(r.per.f)}F per serving${r.estimated ? " (estimated)" : ""}</div>
           <div class="tiny"><a href="${r.source.url}" target="_blank" rel="noopener">${r.source.name} ↗</a></div>
-          ${r.saved ? html`<p class="small">✓ Added to your rotation</p>` : html`<button type="button" class="btn btn-sm" data-action="save-web" data-i="${i}">Add to my menu rotation</button>`}
+          ${r.saved ? html`<p class="hint">Added to your menu rotation.</p>` : html`<button type="button" class="btn btn-sm" data-action="save-web" data-i="${i}">Add to my menu rotation</button>`}
         </div>`)}
       ${s.webRecipes.length ? html`<details><summary>My saved web recipes (${s.webRecipes.length})</summary>
         <ul class="entries">${s.webRecipes.map((r) => html`<li><span>${r.name} <span class="small muted">${r.slot}</span></span><button type="button" class="icon-btn" data-action="del-web" data-id="${r.id}" aria-label="Remove ${r.name}">✕</button></li>`)}</ul>
@@ -297,15 +330,20 @@ function renderFood(s) {
   const entries = s.foods[key] || [];
   const t = totals(entries);
   const lit = liturgicalDay(key);
-  const week = weeklyAdherence(s.foods, target, key);
+  const sub = ui.sub.food;
 
+  if (sub === "recipes") return webRecipesCard(s);
+
+  const summary = html`<section class="card">${macroBlock(t, target)}</section>`;
+  if (sub === "menu") return html`${summary}${penanceCard(key)}${menuCard(s, key)}`;
+
+  const week = weeklyAdherence(s.foods, target, key);
   return html`
-    <section class="card">${macroBlock(t, target)}</section>
+    ${summary}
     ${penanceCard(key)}
-    ${menuCard(s, key)}
 
     <section class="card">
-      <h2>Add food</h2>
+      <div class="sec-head"><h2>Add food</h2></div>
       ${s.savedFoods.length ? html`
         <div class="chips" aria-label="My foods">
           ${s.savedFoods.map((f, i) => html`<button type="button" class="chip" data-action="quick-food" data-i="${i}" title="${f.cal} kcal · P${f.p} C${f.c} F${f.f}">+ ${f.name}</button>`)}
@@ -318,13 +356,11 @@ function renderFood(s) {
         <label>Carbs g<input name="c" type="number" inputmode="decimal" min="0" step="0.1" value="0"></label>
         <label>Fat g<input name="f" type="number" inputmode="decimal" min="0" step="0.1" value="0"></label>
         ${lit.friday ? html`<label class="check span2"><input type="checkbox" name="meat"> Contains meat (Friday)</label>` : ""}
-        <label class="check span2"><input type="checkbox" name="save"> Save to "My foods" for one-tap logging</label>
+        <label class="check span2"><input type="checkbox" name="save"> Save to My foods for one-tap logging</label>
         <button class="btn span2" type="submit">Add</button>
       </form>
-      <p class="small muted">Leave calories blank to compute from macros (4/4/9 kcal per g).</p>
+      <p class="hint">Leave calories blank and they're worked out from the macros (4/4/9 kcal per gram).</p>
     </section>
-
-    ${webRecipesCard(s)}
 
     ${MEALS.map((meal) => {
       const list = entries.filter((e) => e.meal === meal);
@@ -332,18 +368,18 @@ function renderFood(s) {
       const mt = totals(list);
       return html`
         <section class="card">
-          <h3>${meal} <span class="muted small">${round(mt.cal)} kcal · ${round(mt.p)}P ${round(mt.c)}C ${round(mt.f)}F</span></h3>
+          <div class="sec-head"><h2>${meal}</h2><span class="sec-meta">${round(mt.cal)} kcal · ${round(mt.p)}P ${round(mt.c)}C ${round(mt.f)}F</span></div>
           <ul class="entries">${list.map((e) => html`
             <li>
               <div><strong>${e.name}</strong>${e.meat && lit.friday ? html` <span class="tag warn">meat</span>` : ""}
-                <div class="small muted">${round(e.cal)} kcal · P ${e.p} · C ${e.c} · F ${e.f}</div></div>
+                <div class="sub-line">${round(e.cal)} kcal · P ${e.p} · C ${e.c} · F ${e.f}</div></div>
               <button type="button" class="icon-btn" data-action="del-food" data-id="${e.id}" aria-label="Delete ${e.name}">✕</button>
             </li>`)}</ul>
         </section>`;
     })}
 
     <section class="card">
-      <h2>Last 7 days</h2>
+      <div class="sec-head"><h2>Last 7 days</h2>${week ? html`<span class="sec-meta">${week.logged}/7 days logged</span>` : ""}</div>
       ${week ? html`
         <table class="table">
           <tr><th></th><th>Avg/day</th><th>Target</th></tr>
@@ -352,9 +388,9 @@ function renderFood(s) {
           <tr><td>Carbs</td><td>${round(week.c)} g</td><td>${target.carbs} g</td></tr>
           <tr><td>Fat</td><td>${round(week.f)} g</td><td>${target.fat} g</td></tr>
         </table>
-        <p class="small muted">${week.logged} of 7 days logged · protein goal hit ${week.proteinHits}×</p>` : html`<p class="muted">Nothing logged this week yet.</p>`}
+        <p class="hint">Protein goal hit on ${week.proteinHits} of ${week.logged} logged days.</p>` : html`<p class="muted">Nothing logged this week yet.</p>`}
       ${s.savedFoods.length ? html`<details><summary>Manage my foods</summary>
-        <ul class="entries">${s.savedFoods.map((f, i) => html`<li><span>${f.name} <span class="small muted">${f.cal} kcal</span></span><button type="button" class="icon-btn" data-action="del-saved" data-i="${i}" aria-label="Remove ${f.name}">✕</button></li>`)}</ul>
+        <ul class="entries">${s.savedFoods.map((f, i) => html`<li><span>${f.name} <span class="sub-line">${f.cal} kcal</span></span><button type="button" class="icon-btn" data-action="del-saved" data-i="${i}" aria-label="Remove ${f.name}">✕</button></li>`)}</ul>
       </details>` : ""}
     </section>`;
 }
@@ -399,8 +435,8 @@ function programCard(s, key, w) {
   if (!prog) {
     return html`
       <section class="card">
-        <h2>📋 Choose a proven program</h2>
-        <p class="small muted">Each one has a long track record. The app runs the progression, schedules deloads, and tracks weekly volume so you keep progressing.</p>
+        <div class="sec-head"><h2>Choose a proven program</h2></div>
+        <p class="hint">Each one has a long track record. The app runs the progression, schedules deloads, and tracks weekly volume so you keep progressing.</p>
         ${programList(s)}
       </section>`;
   }
@@ -408,29 +444,26 @@ function programCard(s, key, w) {
   const shown = loaded ? w.plan : todaysSession(s.program, s.workouts, key, tmFor(s));
   return html`
     <section class="card program">
-      <h2>📋 ${prog.name}</h2>
-      <p class="small muted">${prog.author} · ${prog.schedule}</p>
-      <div class="small">Today · week ${shown.week}</div>
-      <div class="season-name">${shown.dayName}</div>
-      ${shown.deload ? html`<p class="suggest suggest-deload">↘️ Deload week. Half the sets, same weights, easy effort. This is how you avoid stalling: you recover, then come back stronger.</p>` : ""}
-      ${loaded ? html`<p class="small">✅ Loaded below. Hit the target on every exercise.</p>`
-        : html`<button type="button" class="btn" data-action="load-session">Load today's workout</button>`}
+      <div class="sec-head"><h2>${prog.name}</h2><span class="sec-meta">Week ${shown.week}</span></div>
+      <div class="session-name">${shown.dayName}</div>
+      <p class="hint">${prog.author} · ${prog.schedule}</p>
+      ${shown.deload ? html`<p class="target target-deload"><span class="target-label">Deload week</span> Half the sets, same weights, easy effort. You recover, then come back stronger.</p>` : ""}
+      ${loaded ? "" : html`<button type="button" class="btn full" data-action="load-session">Load today's workout</button>`}
       <details><summary>About this program</summary>
         <p class="small">${prog.about}</p>
         <p class="small"><strong>Best for:</strong> ${prog.bestFor}</p>
         <ol class="small">${prog.plan.map((d) => html`<li><strong>${d.name}:</strong> ${d.ex.map((e) => (e[1] === "531" ? `${e[0]} 5/3/1 + 5×10` : `${e[0]} ${e[1]}×${e[2] === e[3] ? e[2] : `${e[2]}–${e[3]}`}`)).join(", ")}</li>`)}</ol>
       </details>
-      <details><summary>Switch program</summary>${programList(s)}</details>
     </section>`;
 }
 
 function volumeCard(s, key) {
   const v = weeklyVolume(s.workouts, s.exercises, key);
-  const label = { none: "", low: "· low", good: "✓", high: "· high" };
+  const label = { none: "", low: "low", good: "in range", high: "high" };
   return html`
     <section class="card">
-      <h2>📊 Weekly volume</h2>
-      <p class="small muted">Hard sets per muscle in the last 7 days. The research sweet spot is 10–20 sets per muscle per week (shaded band). Under 10 leaves growth on the table. Over 20 during a cut can outrun your recovery.</p>
+      <div class="sec-head"><h2>Weekly volume</h2><span class="sec-meta">last 7 days</span></div>
+      <p class="hint">Hard sets per muscle. The shaded band is the research sweet spot of 10–20 sets a week. Under 10 leaves growth on the table; over 20 during a cut can outrun your recovery.</p>
       <ul class="volume">${MUSCLES.map((m) => {
         const n = v[m];
         const status = n === 0 ? "none" : n < 10 ? "low" : n <= 20 ? "good" : "high";
@@ -445,66 +478,90 @@ function renderTrain(s) {
   const exById = Object.fromEntries(s.exercises.map((e) => [e.id, e]));
   const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])].filter((id) => exById[id]);
   ui.chartEx ??= order[0] || s.exercises[0]?.id;
+  const sub = ui.sub.train;
 
+  if (sub === "progress") {
+    return html`
+      <section class="card">
+        <div class="sec-head"><h2>Strength progress</h2></div>
+        <label>Lift<select data-action="chart-ex">${s.exercises.map((e) => html`<option value="${e.id}" ${e.id === ui.chartEx ? "selected" : ""}>${e.name}</option>`)}</select></label>
+        <div id="lift-chart"></div>
+        ${liftHistory(s, ui.chartEx)}
+      </section>
+      ${volumeCard(s, key)}`;
+  }
+
+  if (sub === "programs") {
+    return html`
+      ${s.program && PROGRAMS[s.program.id] ? programCard(s, key, w) : ""}
+      <section class="card">
+        <div class="sec-head"><h2>${s.program ? "Switch program" : "Choose a proven program"}</h2></div>
+        ${s.program ? "" : html`<p class="hint">Each one has a long track record. The app runs the progression, schedules deloads, and tracks weekly volume so you keep progressing.</p>`}
+        ${programList(s)}
+      </section>
+      <section class="card">
+        <div class="sec-head"><h2>Exercise library</h2><span class="sec-meta">${s.exercises.length} exercises</span></div>
+        <p class="hint">Double progression: work in the rep range. Once every set hits the top, add the increment.</p>
+        <ul class="entries">${s.exercises.map((e) => html`
+          <li><span>${e.name} <span class="sub-line">${e.repMin}–${e.repMax} reps · +${e.increment} lb${e.verified ? " · verified online" : ""}</span></span>
+          <button type="button" class="icon-btn" data-action="del-ex" data-id="${e.id}" aria-label="Remove ${e.name}">✕</button></li>`)}</ul>
+        <details><summary>Add an exercise by hand</summary>
+          <form data-form="new-ex" class="grid-form">
+            <label class="span2">Name<input name="name" required placeholder="Hack squat"></label>
+            <label>Type<select name="kind"><option value="upper">Upper body</option><option value="lower">Lower body</option></select></label>
+            <label>Main muscle<select name="muscle">${MUSCLES.map((m) => html`<option value="${m}">${cap(m)}</option>`)}</select></label>
+            <label>Min reps<input name="repMin" type="number" min="1" value="6"></label>
+            <label>Max reps<input name="repMax" type="number" min="1" value="10"></label>
+            <label class="span2">Increment (lb)<input name="increment" type="number" step="0.5" min="0" value="5"></label>
+            <button class="btn span2" type="submit">Add to library</button>
+          </form>
+        </details>
+      </section>`;
+  }
+
+  const prog = s.program && PROGRAMS[s.program.id];
+  // One exercise is open for logging at a time: the one you picked, else the first unfinished.
+  const isDone = (id) => {
+    const n = w.sets.filter((x) => x.exId === id).length;
+    const rxItem = w.plan?.items?.find((i) => i.exId === id);
+    return rxItem ? n >= rxItem.sets : n >= 3;
+  };
+  const openId = order.includes(ui.openEx) ? ui.openEx : order.find((id) => !isDone(id)) || order[order.length - 1];
   return html`
-    ${programCard(s, key, w)}
+    ${prog ? programCard(s, key, w) : html`
+      <section class="card">
+        <div class="sec-head"><h2>No program</h2><button type="button" class="link-btn" data-sub-go="programs">Choose one</button></div>
+        <p class="hint">Train freestyle below, or pick a proven program and the app will load each day for you.</p>
+      </section>`}
 
     <section class="card offer">
-      <h2>🙏 Offer it up</h2>
-      <p class="small">"I pommel my body and subdue it" — 1 Cor 9:27. Before you lift, name who this workout is for. Offer your hardest set for them.</p>
+      <div class="sec-head"><h2>Offer it up</h2><span class="sec-meta">1 Cor 9:27</span></div>
       <form class="inline" data-form="intention">
-        <label class="grow">Today's intention<input name="intention" value="${w.intention}" placeholder="e.g. my father's health, souls in purgatory"></label>
+        <label class="grow">Who is this workout for?<input name="intention" value="${w.intention}" placeholder="My father's health, souls in purgatory…"></label>
         <button class="btn" type="submit">Set</button>
       </form>
+      <label class="check"><input type="checkbox" data-action="toggle-offered" ${w.offered ? "checked" : ""}> I offered this workout to God. My hardest set is for this intention.</label>
       <details><summary>Athlete's offering prayer</summary><p class="prayer">${PRAYERS.athletesOffering}</p></details>
-      <label class="check"><input type="checkbox" data-action="toggle-offered" ${w.offered ? "checked" : ""}> I offered this workout to God</label>
     </section>
 
-    ${order.map((id) => exerciseCard(s, exById[id], w, key))}
-
-    ${workoutReview(s, w, key, order, exById)}
+    ${order.map((id) => exerciseCard(s, exById[id], w, key, id === openId))}
 
     <section class="card">
-      <h2>Add exercise</h2>
+      <div class="sec-head"><h2>Add exercise</h2></div>
       <form class="inline" data-form="ex-search">
-        <label class="grow">Type any exercise<input name="q" value="${ui.exQuery}" placeholder="e.g. incline db press, RDL, skull crushers" autocomplete="off" data-live="ex-query"></label>
+        <label class="grow">Type it the way you say it<input name="q" value="${ui.exQuery}" placeholder="incline db press, RDL, skull crushers" autocomplete="off" data-live="ex-query"></label>
         <button class="btn" type="submit">Find</button>
       </form>
       <div id="ex-results" aria-live="polite">${exResults(s)}</div>
-      <details><summary>Or pick from your library</summary>
+      ${s.exercises.some((e) => !order.includes(e.id)) ? html`<details><summary>Pick from your library</summary>
         <form class="inline" data-form="add-ex">
           <label class="grow">Exercise<select name="exId">${s.exercises.filter((e) => !order.includes(e.id)).map((e) => html`<option value="${e.id}">${e.name}</option>`)}</select></label>
           <button class="btn" type="submit">Add</button>
         </form>
-      </details>
+      </details>` : ""}
     </section>
 
-    <section class="card">
-      <h2>Strength progress</h2>
-      <label>Lift<select data-action="chart-ex">${s.exercises.map((e) => html`<option value="${e.id}" ${e.id === ui.chartEx ? "selected" : ""}>${e.name}</option>`)}</select></label>
-      <div id="lift-chart"></div>
-      ${liftHistory(s, ui.chartEx)}
-    </section>
-
-    <section class="card">
-      <details><summary>Exercise library & rep ranges</summary>
-        <p class="small muted">Double progression: work in the rep range; once every set hits the top, add the increment.</p>
-        <ul class="entries">${s.exercises.map((e) => html`
-          <li><span>${e.name} <span class="small muted">${e.repMin}–${e.repMax} reps · +${e.increment} lb</span></span>
-          <button type="button" class="icon-btn" data-action="del-ex" data-id="${e.id}" aria-label="Remove ${e.name}">✕</button></li>`)}</ul>
-        <form data-form="new-ex" class="grid-form">
-          <label class="span2">Name<input name="name" required placeholder="Hack squat"></label>
-          <label>Type<select name="kind"><option value="upper">Upper body</option><option value="lower">Lower body</option></select></label>
-          <label class="span2">Main muscle<select name="muscle">${MUSCLES.map((m) => html`<option value="${m}">${cap(m)}</option>`)}</select></label>
-          <label>Increment lb<input name="increment" type="number" step="0.5" min="0.5" value="5"></label>
-          <label>Min reps<input name="repMin" type="number" min="1" value="6"></label>
-          <label>Max reps<input name="repMax" type="number" min="1" value="10"></label>
-          <button class="btn span2" type="submit">Add to library</button>
-        </form>
-      </details>
-    </section>
-
-    ${volumeCard(s, key)}`;
+    ${workoutReview(s, w, key, order, exById)}`;
 }
 
 // ---------- exercise recognition ----------
@@ -529,9 +586,9 @@ function exPreview(ex, label) {
   const range = `${ex.repMin}–${ex.repMax} reps`;
   return html`
     <div class="ex-preview">
-      <div class="small muted">${label}</div>
-      <div class="menu-name">✓ ${ex.name}</div>
-      <div class="small muted">${cap(ex.muscle || "general")}${ex.secondary?.length ? ` + ${ex.secondary.join(", ")}` : ""} · ${ex.equipment || ex.how?.equipment || ""} · ${range}</div>
+      <div class="eyebrow">${label}</div>
+      <div class="menu-name">${ex.name}</div>
+      <div class="sub-line">${cap(ex.muscle || "general")}${ex.secondary?.length ? ` + ${ex.secondary.join(", ")}` : ""} · ${ex.equipment || ex.how?.equipment || ""} · ${range}</div>
       ${howBlock(ex.how || exerciseInfo(ex.name)?.how, true)}
       <div class="row">
         <button type="button" class="btn" data-action="add-known" data-name="${ex.name}">Add to today's workout</button>
@@ -542,8 +599,8 @@ function exPreview(ex, label) {
 
 function lookupButton(s, q) {
   return s.settings.apiKey
-    ? html`<button type="button" class="btn ghost" data-action="ex-lookup" data-q="${q}">🔎 Look up "${q}" online</button>`
-    : html`<p class="small muted">Add your Anthropic API key on the Me tab and the app will look up unknown exercises online (how to do it, cues, sources) for you to confirm. Or add it yourself in "Exercise library & rep ranges" below.</p>`;
+    ? html`<button type="button" class="btn ghost" data-action="ex-lookup" data-q="${q}">Look up "${q}" online</button>`
+    : html`<p class="hint">Add your Anthropic API key on the Me tab and unknown exercises get looked up online (how to do it, cues, sources) for you to confirm. Or add it by hand under Programs, then Exercise library.</p>`;
 }
 
 function exResults(s) {
@@ -556,7 +613,7 @@ function exResults(s) {
     if (!d.found) {
       return html`<p>I couldn't identify "${L.query}" as an exercise.</p>
         ${d.alternatives.length ? html`<p class="small">Did you mean:</p><div class="chips">${d.alternatives.map((a) => html`<button type="button" class="chip" data-action="ex-lookup" data-q="${a}">${a}</button>`)}</div>` : ""}
-        <p class="small muted">Try another name, or add it yourself in the exercise library below.</p>`;
+        <p class="hint">Try another name, or add it by hand under Programs, then Exercise library.</p>`;
     }
     return html`
       <div class="ex-verify">
@@ -616,8 +673,7 @@ function addToToday(st, exId) {
 
 // ---------- coach review ----------
 
-const FB_ICON = { good: "✅", ok: "➖", warn: "⚠️" };
-const VERDICT_ICON = { up: "⬆️", same: "➖", down: "⬇️", new: "🆕" };
+const VERDICT_LABEL = { up: "Progressed", same: "Held", down: "Down", new: "Baseline" };
 
 function rxOf(rxItem) {
   return rxItem ? (rxItem.detail ? "531" : `${rxItem.repMin}-${rxItem.repMax}`) : "";
@@ -631,9 +687,9 @@ function feedbackFor(s, ex, rxItem, prev, sets) {
   return sets.map((x, i) => {
     if (rxItem?.detail) {
       const d = rxItem.detail[i];
-      if (!d) return { level: "ok", notes: ["Extra set beyond the plan."] };
-      if (+x.reps >= d.reps) return { level: "good", notes: [d.plus ? `AMRAP: ${x.reps} reps, ${x.reps - d.reps} over the minimum ✓` : `Hit the prescribed ${d.weight}×${d.reps} ✓`] };
-      return { level: "warn", notes: [`Missed the prescribed ${d.reps} reps.${d.plus ? " Missing the + set minimum means your Training Max is too high. Lower it 10% next cycle." : ""}`] };
+      if (!d) return { level: "ok", notes: ["Extra set beyond the plan."], delta: "extra", dir: "none" };
+      if (+x.reps >= d.reps) return { level: "good", notes: [d.plus ? `AMRAP: ${x.reps} reps, ${x.reps - d.reps} over the minimum.` : `Hit the prescribed ${d.weight}×${d.reps}.`], delta: d.plus ? `+${x.reps - d.reps}` : "hit", dir: "up" };
+      return { level: "warn", notes: [`Missed the prescribed ${d.reps} reps.${d.plus ? " Missing the + set minimum means your Training Max is too high. Lower it 10% next cycle." : ""}`], delta: "miss", dir: "down" };
     }
     return setFeedback({
       ex, set: x, index: i, prev,
@@ -667,20 +723,27 @@ function workoutReview(s, w, key, order, exById) {
   const headline = count("down") > count("up") ? "Tough day. Recover well and come back stronger." : count("up") ? "You're progressing. This is how muscle is built and kept." : "Solid work. Next session, push for one more rep.";
   return html`
     <section class="card review">
-      <h2>🧠 Coach's workout review</h2>
-      <p><strong>${headline}</strong></p>
-      <p class="small muted">${count("up")} progressed · ${count("same")} held · ${count("down")} down · ${count("new")} new · ${prs} PR${prs === 1 ? "" : "s"} · ${Math.round(volume).toLocaleString()} lb total volume</p>
+      <div class="sec-head"><h2>Coach's review</h2><span class="sec-meta">${Math.round(volume).toLocaleString()} lb moved</span></div>
+      <p class="review-headline">${headline}</p>
+      <div class="stats stats-4">
+        ${stat("Progressed", count("up"), "lifts", count("up") ? "good" : "")}
+        ${stat("Held", count("same"), "lifts")}
+        ${stat("Down", count("down"), "lifts", count("down") ? "bad" : "")}
+        ${stat("PRs", prs, "today", prs ? "good" : "")}
+      </div>
       <ul class="review-list">${rows.map((r) => html`
-        <li><strong>${VERDICT_ICON[r.verdict.kind]} ${r.ex.name}</strong>${r.prs ? html` <span class="tag pr">${r.prs} PR</span>` : ""}
-          <div class="small">${r.verdict.text}</div>
-          <div class="small muted">${r.next}</div></li>`)}</ul>
+        <li><div class="review-row"><strong>${r.ex.name}</strong><span class="chip chip-${r.verdict.kind}">${VERDICT_LABEL[r.verdict.kind]}</span>${r.prs ? html`<span class="tag pr">${r.prs} PR</span>` : ""}</div>
+          <div class="sub-line">${r.verdict.text}</div>
+          <div class="next-line">${r.next}</div></li>`)}</ul>
     </section>`;
 }
 
-function exerciseCard(s, ex, w, key) {
+const TARGET_LABEL = { up: "Add weight", deload: "Deload", reps: "Beat last time", new: "Target" };
+
+function exerciseCard(s, ex, w, key, open = true) {
   const sets = w.sets.filter((x) => x.exId === ex.id);
   const rxItem = w.plan?.items?.find((i) => i.exId === ex.id);
-  const rx = rxItem ? (rxItem.detail ? "531" : `${rxItem.repMin}-${rxItem.repMax}`) : "";
+  const rx = rxOf(rxItem);
   let sug, nextWeight, nextReps;
   if (rxItem?.detail) {
     const d = rxItem.detail[Math.min(sets.length, rxItem.detail.length - 1)];
@@ -693,40 +756,96 @@ function exerciseCard(s, ex, w, key) {
     nextReps = sug.repsPerSet?.[sets.length] ?? sug.reps;
     nextWeight = sets.length ? sets[sets.length - 1].weight : sug.weight;
   }
-  const range = rxItem ? (rxItem.repMin === rxItem.repMax ? `${rxItem.repMin}` : `${rxItem.repMin}–${rxItem.repMax}`) : "";
-  const target = rxItem ? (rxItem.detail ? `${rxItem.sets} sets` : `${rxItem.sets} × ${range}`) : `${ex.repMin}–${ex.repMax} reps`;
+  const range = rxItem ? (rxItem.repMin === rxItem.repMax ? `${rxItem.repMin}` : `${rxItem.repMin}–${rxItem.repMax}`) : `${ex.repMin}–${ex.repMax}`;
+  const target = rxItem ? (rxItem.detail ? `${rxItem.sets} sets` : `${rxItem.sets} × ${range}`) : `${range} reps`;
   const rest = rxItem?.rest;
   const prev = prevSession(s, ex, rx, key);
   const feedback = feedbackFor(s, ex, rxItem, prev, sets);
   const verdict = !rxItem?.detail && sets.length ? exerciseVerdict(sets, prev) : null;
+  const inc = ex.increment || 5;
+  const how = howOf(ex);
+  const done = rxItem && sets.length >= rxItem.sets;
+  const deltaText = (fb) => fb.delta || (prev ? "—" : "new");
+  const setRows = sets.length ? html`<ol class="set-list">${sets.map((x, i) => {
+    const fb = feedback[i];
+    return html`
+      <li class="set-row fb-${fb.level}">
+        <span class="set-n">${i + 1}</span>
+        <span class="set-val"><strong>${x.weight}</strong><small> lb</small> × <strong>${x.reps}</strong>${x.rir !== undefined && x.rir !== "" ? html`<small> @${x.rir} RIR</small>` : ""}</span>
+        ${isPR(s.workouts, ex.id, x, key) ? html`<span class="tag pr">PR</span>` : ""}
+        <span class="delta delta-${fb.dir}" title="vs same set last session">${deltaText(fb)}</span>
+        <button type="button" class="icon-btn" data-action="del-set" data-id="${x.id}" aria-label="Delete set ${i + 1}">✕</button>
+        <p class="set-note">${fb.notes.join(" ")}</p>
+      </li>`;
+  })}</ol>` : "";
+
+  if (!open) {
+    return html`
+      <section class="card ex-card is-collapsed${done ? " is-done" : ""}">
+        <button type="button" class="ex-toggle" data-action="open-ex" data-id="${ex.id}" aria-expanded="false">
+          <span><span class="ex-name">${ex.name}</span><span class="sub-line">${target}${verdict ? ` · ${VERDICT_LABEL[verdict.kind].toLowerCase()}` : ""}</span><span class="open-hint">${sets.length ? "Edit sets" : "Log sets"}</span></span>
+          ${rxItem ? html`<span class="ex-count"><strong>${Math.min(sets.length, rxItem.sets)}</strong>/${rxItem.sets}</span>` : ""}
+        </button>
+        ${setRows}
+      </section>`;
+  }
+
   return html`
-    <section class="card">
-      <h3>${ex.name} <span class="small muted">${target}${rest ? ` · rest ${fmtRest(rest)}` : ""}</span></h3>
-      ${howOf(ex)?.cues?.[0] ? html`<p class="small cue">💡 ${howOf(ex).cues[0]}</p>` : ""}
-      ${rxItem ? html`<div class="set-progress">${Math.min(sets.length, rxItem.sets)}/${rxItem.sets} sets${sets.length >= rxItem.sets ? " ✅" : ""}</div>` : ""}
-      <p class="suggest suggest-${sug.kind || "new"}">${sug.kind === "up" ? "⬆️ " : sug.kind === "deload" ? "↘️ " : "🎯 "}${sug.note}</p>
-      ${rxItem?.note && !rxItem.detail ? html`<p class="small muted">${rxItem.note}</p>` : ""}
+    <section class="card ex-card${done ? " is-done" : ""}">
+      <div class="ex-head">
+        <div>
+          <h3>${ex.name}</h3>
+          <div class="sub-line">${target}${rest ? ` · rest ${fmtRest(rest)}` : ""}</div>
+        </div>
+        ${rxItem ? html`<div class="ex-count" aria-label="${sets.length} of ${rxItem.sets} sets done"><strong>${Math.min(sets.length, rxItem.sets)}</strong>/${rxItem.sets}</div>` : ""}
+      </div>
+
+      <p class="target target-${sug.kind || "new"}"><span class="target-label">${TARGET_LABEL[sug.kind || "new"]}</span> ${sug.note}</p>
+      ${rxItem?.note && !rxItem.detail ? html`<p class="hint">${rxItem.note}</p>` : ""}
+      ${how?.cues?.[0] ? html`<p class="cue"><span class="target-label">Cue</span> ${how.cues[0]}</p>` : ""}
+
       ${rxItem?.detail ? html`<table class="table plan-table"><tr><th>Set</th><th>Weight</th><th>Reps</th><th></th></tr>
-        ${rxItem.detail.map((d, i) => html`<tr class="${i < sets.length ? "done" : ""}"><td>${i + 1}</td><td>${d.weight} lb</td><td>${d.reps}${d.plus ? "+" : ""}</td><td class="tiny muted">${d.label}</td></tr>`)}</table>` : ""}
-      ${sets.length ? html`<ol class="sets">${sets.map((x, i) => html`
-        <li><div class="set-main"><span class="set-n">${i + 1}</span><span class="grow"><strong>${x.weight}</strong> lb × <strong>${x.reps}</strong>${x.rir !== undefined && x.rir !== "" ? html` <span class="small muted">@ ${x.rir} RIR</span>` : ""}${isPR(s.workouts, ex.id, x, key) ? html` <span class="tag pr">PR</span>` : ""}</span>
-          <button type="button" class="icon-btn" data-action="del-set" data-id="${x.id}" aria-label="Delete set">✕</button></div>
-          <div class="fb fb-${feedback[i].level}">${FB_ICON[feedback[i].level]} ${feedback[i].notes.join(" ")}</div></li>`)}</ol>` : ""}
-      ${verdict ? html`<p class="verdict verdict-${verdict.kind}">${VERDICT_ICON[verdict.kind]} ${verdict.text}</p>` : ""}
-      <form class="inline" data-form="set" data-ex="${ex.id}" data-rx="${rx}" data-rest="${rest || ""}">
-        <label>lb<input name="weight" type="number" inputmode="decimal" step="0.5" min="0" value="${nextWeight ?? ""}" required></label>
-        <label>reps<input name="reps" type="number" inputmode="numeric" min="1" value="${nextReps}" required></label>
-        <label title="Reps in reserve: how many more good reps you could have done">RIR<select name="rir"><option value="">—</option>${[0, 1, 2, 3, 4].map((n) => html`<option value="${n}">${n === 4 ? "4+" : n}</option>`)}</select></label>
-        <button class="btn" type="submit">Log set ${sets.length + 1}</button>
-        ${rest ? html`<button type="button" class="btn ghost" data-action="rest" data-sec="${rest}" aria-label="Start rest timer">⏱ ${fmtRest(rest)}</button>` : ""}
+        ${rxItem.detail.map((d, i) => html`<tr class="${i < sets.length ? "done" : i === sets.length ? "next" : ""}"><td>${i + 1}</td><td>${d.weight} lb</td><td>${d.reps}${d.plus ? "+" : ""}</td><td class="sub-line">${d.label}</td></tr>`)}</table>` : ""}
+
+      ${setRows}
+      ${verdict ? html`<p class="verdict verdict-${verdict.kind}"><span class="target-label">${VERDICT_LABEL[verdict.kind]}</span> ${verdict.text}</p>` : ""}
+
+      <form class="set-form" data-form="set" data-ex="${ex.id}" data-rx="${rx}" data-rest="${rest || ""}">
+        <div class="steppers">
+          <div class="field">
+            <span class="field-label">Weight, lb</span>
+            <div class="stepper">
+              <button type="button" data-step="-${inc}" aria-label="Minus ${inc} lb">−</button>
+              <input name="weight" type="number" inputmode="decimal" step="0.5" min="0" value="${nextWeight ?? ""}" required aria-label="Weight in pounds">
+              <button type="button" data-step="${inc}" aria-label="Plus ${inc} lb">+</button>
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-label">Reps</span>
+            <div class="stepper">
+              <button type="button" data-step="-1" aria-label="One fewer rep">−</button>
+              <input name="reps" type="number" inputmode="numeric" min="1" value="${nextReps}" required aria-label="Reps">
+              <button type="button" data-step="1" aria-label="One more rep">+</button>
+            </div>
+          </div>
+        </div>
+        <fieldset class="seg">
+          <legend>Reps left in the tank (RIR)</legend>
+          ${["", 0, 1, 2, 3, 4].map((n) => html`<label><input type="radio" name="rir" value="${n}" ${n === "" ? "checked" : ""}><span>${n === "" ? "skip" : n === 4 ? "4+" : n}</span></label>`)}
+        </fieldset>
+        <div class="set-actions">
+          <button class="btn btn-log" type="submit">Log set ${sets.length + 1}</button>
+          ${rest ? html`<button type="button" class="btn ghost" data-action="rest" data-sec="${rest}">Rest ${fmtRest(rest)}</button>` : ""}
+        </div>
       </form>
-      ${howBlock(howOf(ex))}
-      ${s.settings.apiKey ? html`<details class="how" ${ui.coach[ex.id] ? "open" : ""}><summary>Ask the coach about ${ex.name}</summary>
+
+      ${howBlock(how)}
+      ${s.settings.apiKey ? html`<details class="how" ${ui.coach[ex.id] ? "open" : ""}><summary>Ask the coach</summary>
         <form data-form="ask-coach" data-ex="${ex.id}" class="inline">
-          <label class="grow">Question<input name="q" placeholder="e.g. Should I go heavier or add reps? My lower back feels it." required></label>
+          <label class="grow">Question about ${ex.name}<input name="q" placeholder="Heavier, or more reps? Lower back feels it." required></label>
           <button class="btn" type="submit" ${ui.coach[ex.id]?.loading ? "disabled" : ""}>Ask</button>
         </form>
-        ${ui.coach[ex.id]?.loading ? html`<p class="muted small">Thinking…</p>` : ""}
+        ${ui.coach[ex.id]?.loading ? html`<p class="hint">Thinking…</p>` : ""}
         ${ui.coach[ex.id]?.error ? html`<p class="error">${ui.coach[ex.id].error}</p>` : ""}
         ${ui.coach[ex.id]?.text ? html`<div class="reflection">${raw(renderMarkdown(ui.coach[ex.id].text))}</div>` : ""}
       </details>` : ""}
@@ -769,20 +888,67 @@ function renderFaith(s) {
   };
   const offerings = Object.entries(s.workouts).filter(([, w]) => w.intention).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 12);
 
+  const sub = ui.sub.faith;
+  const head = dayHead(key, g?.data?.day || lit.season, html`<p class="day-note"><span class="swatch swatch-${lit.color}" aria-hidden="true"></span>${lit.season} · vestments ${lit.color}</p>`);
+
+  if (sub === "pray") {
+    return html`
+      ${head}
+      <section class="card">
+        <div class="sec-head"><h2>Lectio Divina</h2><span class="sec-meta">${g?.data?.source || "today's Gospel"}</span></div>
+        <form data-form="lectio">
+          ${LECTIO.map(([title, prompt, field]) => html`
+            <div class="step"><strong>${title}</strong><p class="hint">${prompt}</p>
+            ${field ? html`<textarea name="${field}" rows="2">${f.lectio?.[field] || ""}</textarea>` : ""}</div>`)}
+          <button class="btn" type="submit">Save my prayer</button>
+        </form>
+      </section>
+
+      <section class="card virtue">
+        <div class="sec-head"><h2>Virtue of the week</h2><span class="sec-meta">${virtue.name}</span></div>
+        <blockquote>${virtue.verse}<cite>${virtue.ref}</cite></blockquote>
+        <dl class="pairs"><dt>Body</dt><dd>${virtue.body}</dd><dt>Soul</dt><dd>${virtue.soul}</dd><dt>Companion</dt><dd>${virtue.saint}. ${virtue.quote}</dd></dl>
+      </section>
+
+      <section class="card">
+        <div class="sec-head"><h2>Evening Examen</h2><span class="sec-meta">5 minutes</span></div>
+        <form data-form="examen">
+          ${EXAMEN.map(([title, prompt], i) => html`
+            <div class="step"><strong>${i + 1}. ${title}</strong><p class="hint">${prompt}</p>
+            ${i >= 2 ? html`<textarea name="e${i}" rows="2">${f.examen?.["e" + i] || ""}</textarea>` : ""}</div>`)}
+          <button class="btn" type="submit">Finish Examen</button>
+        </form>
+        <details><summary>Prayer to St. Michael</summary><p class="prayer">${PRAYERS.stMichael}</p></details>
+      </section>`;
+  }
+
+  if (sub === "ledger") {
+    const totalOffered = Object.values(s.workouts).filter((w) => w.offered || w.intention).length;
+    return html`
+      ${head}
+      <div class="stats stats-3">
+        ${stat("Streak", ruleStreak(s), "days with 5+ of 7")}
+        ${stat("Today", `${rule.filter((i) => i.done).length}/7`, "practices kept")}
+        ${stat("Offered", totalOffered, "workouts")}
+      </div>
+      <section class="card">
+        <div class="sec-head"><h2>Spiritual ledger</h2></div>
+        <p class="hint">Workouts you've offered, and for whom. Sweat that became prayer.</p>
+        ${offerings.length ? html`<ul class="entries">${offerings.map(([k, w]) => html`<li><span>${fmtDate(k)}. <em>${w.intention}</em></span><span class="sub-line">${w.sets.length} sets</span></li>`)}</ul>`
+          : html`<p class="muted">Set an intention on the Train tab to start your ledger.</p>`}
+      </section>`;
+  }
+
   return html`
-    <section class="card season season-${lit.color}">
-      <div class="small">${fmtDate(key, { weekday: "long", month: "long", day: "numeric" })}</div>
-      <div class="season-name">${g?.data?.day || lit.season}</div>
-      <div class="small">Season: ${lit.season} · Vestments: ${lit.color}</div>
-    </section>
+    ${head}
 
     <section class="card">
-      <h2>The Disciplined Disciple</h2>
-      <p class="small muted">A daily rule of life for body and soul. Some boxes check themselves from your training and food logs. 🔥 ${ruleStreak(s)}-day streak.</p>
+      <div class="sec-head"><h2>Rule of life</h2><span class="sec-meta">${rule.filter((i) => i.done).length}/7 · ${ruleStreak(s)}-day streak</span></div>
+      <p class="hint">The Disciplined Disciple: seven practices for body and soul. Workout and temperance check themselves from your logs.</p>
       <ul class="rule">${rule.map((i) => html`
         <li>
           <label class="check"><input type="checkbox" data-action="rule" data-id="${i.id}" ${i.done ? "checked" : ""} ${i.auto ? "disabled" : ""}>
-            <span><strong>${i.label}</strong><span class="small muted"> — ${i.auto ? "done (from your log)" : i.hint}</span></span></label>
+            <span><strong>${i.label}</strong><span class="sub-line">${i.auto ? "Done, from your log" : i.hint}</span></span></label>
           ${prayerFor[i.id] ? html`<details><summary>Pray it</summary>${prayerFor[i.id]}</details>` : ""}
         </li>`)}</ul>
     </section>
@@ -790,9 +956,8 @@ function renderFaith(s) {
     ${penanceCard(key)}
 
     <section class="card">
-      <h2>📖 Today's Gospel</h2>
+      <div class="sec-head"><h2>Today's Gospel</h2>${g?.data?.source ? html`<span class="sec-meta">${g.data.source}</span>` : ""}</div>
       ${g?.data ? html`
-        <p class="gospel-ref">${g.data.source}</p>
         ${g.data.heading ? html`<p class="small muted"><em>${g.data.heading}</em></p>` : ""}
         <div class="gospel">${raw(g.data.html || esc(g.data.text).replace(/\n/g, "<br>"))}</div>
         ${g.data.copyright ? html`<p class="tiny muted">${g.data.copyright}</p>` : ""}`
@@ -811,50 +976,16 @@ function renderFaith(s) {
     </section>
 
     <section class="card">
-      <h2>✝️ A Catholic reflection</h2>
+      <div class="sec-head"><h2>A Catholic reflection</h2></div>
       ${f.reflection ? html`<div class="reflection">${raw(renderMarkdown(f.reflection))}</div>
         <p class="tiny muted">AI-written reflection, meant to aid prayer — not Magisterial teaching. Test it against the Catechism and your priest.</p>`
       : s.settings.apiKey ? html`<p class="small muted">Generate an interpretation rooted in the Fathers, the saints and the Catechism, with a resolution for today.</p>`
-      : html`<p class="small muted">Add an Anthropic API key on the Me tab to generate a daily Catholic interpretation of the Gospel. Meanwhile, pray with Lectio Divina below.</p>`}
+      : html`<p class="hint">Add an Anthropic API key on the Me tab to generate a daily Catholic interpretation of the Gospel. Meanwhile, pray with Lectio Divina under Pray.</p>`}
       ${s.settings.apiKey && g?.data ? html`<button type="button" class="btn" data-action="reflect" ${ui.busy.reflect ? "disabled" : ""}>${ui.busy.reflect ? "Writing…" : f.reflection ? "Regenerate" : "Generate reflection"}</button>` : ""}
       ${ui.busy.reflectError ? html`<p class="error">${ui.busy.reflectError}</p>` : ""}
     </section>
 
-    <section class="card">
-      <h2>Lectio Divina</h2>
-      <form data-form="lectio">
-        ${LECTIO.map(([title, prompt, field]) => html`
-          <div class="step"><strong>${title}</strong><p class="small">${prompt}</p>
-          ${field ? html`<textarea name="${field}" rows="2">${f.lectio?.[field] || ""}</textarea>` : ""}</div>`)}
-        <button class="btn" type="submit">Save my prayer</button>
-      </form>
-    </section>
-
-    <section class="card virtue">
-      <h2>Virtue of the week: ${virtue.name}</h2>
-      <blockquote>${virtue.verse}<cite>${virtue.ref}</cite></blockquote>
-      <p><strong>Body:</strong> ${virtue.body}</p>
-      <p><strong>Soul:</strong> ${virtue.soul}</p>
-      <p class="small"><strong>Companion:</strong> ${virtue.saint} — ${virtue.quote}</p>
-    </section>
-
-    <section class="card">
-      <h2>🌙 Evening Examen</h2>
-      <form data-form="examen">
-        ${EXAMEN.map(([title, prompt], i) => html`
-          <div class="step"><strong>${i + 1}. ${title}</strong><p class="small">${prompt}</p>
-          ${i >= 2 ? html`<textarea name="e${i}" rows="2">${f.examen?.["e" + i] || ""}</textarea>` : ""}</div>`)}
-        <button class="btn" type="submit">Finish Examen</button>
-      </form>
-      <details><summary>Prayer to St. Michael</summary><p class="prayer">${PRAYERS.stMichael}</p></details>
-    </section>
-
-    <section class="card">
-      <h2>Spiritual ledger</h2>
-      <p class="small muted">Workouts you've offered, and for whom. Sweat that became prayer.</p>
-      ${offerings.length ? html`<ul class="entries">${offerings.map(([k, w]) => html`<li><span>${fmtDate(k)} — <em>${w.intention}</em></span><span class="small muted">${w.sets.length} sets</span></li>`)}</ul>`
-        : html`<p class="muted small">Set an intention on the Train tab to start your ledger.</p>`}
-    </section>`;
+`;
 }
 
 async function loadGospel(key) {
@@ -952,10 +1083,18 @@ function render() {
   label.textContent = ui.date === dateKey() ? "Today" : fmtDate(ui.date);
   document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-current", b.dataset.tab === ui.tab ? "page" : "false"));
   document.body.dataset.season = liturgicalDay(ui.date).color;
+  renderSubnav();
   view.innerHTML = RENDER[ui.tab](s)[RAW];
   if (ui.tab === "today") drawWeightChart(s);
   if (ui.tab === "train") drawLiftChart(s);
-  if (ui.tab === "faith" && !ui.gospel[ui.date] && !s.faith[ui.date]?.gospel && navigator.onLine) loadGospel(ui.date);
+  if (ui.tab === "faith" && ui.sub.faith === "today" && !ui.gospel[ui.date] && !s.faith[ui.date]?.gospel && navigator.onLine) loadGospel(ui.date);
+}
+
+function renderSubnav() {
+  const nav = document.getElementById("subnav");
+  const subs = SUBS[ui.tab];
+  nav.hidden = !subs;
+  nav.innerHTML = subs ? subs.map(([id, label]) => `<button type="button" data-sub="${id}" aria-pressed="${ui.sub[ui.tab] === id}">${label}</button>`).join("") : "";
 }
 
 function go(tab) {
@@ -1028,7 +1167,7 @@ function startRest(sec) {
   const tick = () => {
     if (restTimer !== token) return;
     const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
-    label.textContent = left ? `Rest ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "Go — next set! 💪";
+    label.textContent = left ? `Rest ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "Rest done. Next set.";
     if (!left) {
       clearInterval(token.id);
       navigator.vibrate?.([200, 100, 200]);
@@ -1108,7 +1247,12 @@ const forms = {
     const set = { id: uid(), exId: form.dataset.ex, weight: +d.weight, reps: +d.reps };
     if (d.rir !== "" && d.rir !== undefined) set.rir = +d.rir;
     if (form.dataset.rx) set.rx = form.dataset.rx;
-    update((s) => { ensureWorkout(s, ui.date).sets.push(set); });
+    update((s) => {
+      const w = ensureWorkout(s, ui.date);
+      w.sets.push(set);
+      const rxItem = w.plan?.items?.find((i) => i.exId === set.exId);
+      if (w.sets.filter((x) => x.exId === set.exId).length >= (rxItem?.sets ?? 99)) ui.openEx = null;
+    });
     if (form.dataset.rest) startRest(+form.dataset.rest);
   },
   "new-ex"(d) {
@@ -1231,6 +1375,7 @@ const actions = {
     if (confirm("Stop following this program? Your logged workouts stay.")) update((st) => { st.program = null; });
   },
   rest(el) { startRest(+el.dataset.sec); },
+  "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
   "ex-pick"(el) { ui.exPick = el.dataset.name; ui.exLookup = null; render(); },
   "ex-clear"() { ui.exQuery = ""; ui.exPick = null; ui.exLookup = null; render(); },
   "ex-lookup"(el) { ui.exQuery = el.dataset.q; startLookup(el.dataset.q); },
@@ -1288,7 +1433,23 @@ document.addEventListener("click", (e) => {
   const tab = e.target.closest("[data-tab]");
   if (tab) return go(tab.dataset.tab);
   const link = e.target.closest("[data-goto]");
-  if (link) return go(link.dataset.goto);
+  if (link) {
+    if (link.dataset.sub) ui.sub[link.dataset.goto] = link.dataset.sub;
+    return go(link.dataset.goto);
+  }
+  const subBtn = e.target.closest("#subnav [data-sub], [data-sub-go]");
+  if (subBtn) {
+    ui.sub[ui.tab] = subBtn.dataset.sub || subBtn.dataset.subGo;
+    render();
+    return window.scrollTo(0, 0);
+  }
+  const step = e.target.closest("button[data-step]");
+  if (step) {
+    const input = step.parentElement.querySelector("input");
+    const next = Math.max(+input.min || 0, Math.round(((+input.value || 0) + +step.dataset.step) * 2) / 2);
+    input.value = next;
+    return;
+  }
   const act = e.target.closest("button[data-action]");
   if (act && actions[act.dataset.action]) actions[act.dataset.action](act);
 });

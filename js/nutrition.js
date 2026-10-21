@@ -117,7 +117,7 @@ export function paceVerdict({ target, trend, adherence, strength, profile }) {
     if (adherence.proteinHits < adherence.logged) {
       msgs.push(`Protein goal hit ${adherence.proteinHits}/${adherence.logged} logged days. Protein is the muscle-keeper — make it non-negotiable.`);
       bump("warning");
-    } else msgs.push(`Protein goal hit every logged day. 💪`);
+    } else msgs.push(`Protein goal hit every logged day.`);
   } else {
     msgs.push("Log your food for a few days to see your weekly pace.");
   }
