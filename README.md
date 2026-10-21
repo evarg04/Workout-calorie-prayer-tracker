@@ -68,6 +68,8 @@ Pick one and the app loads each day's workout, with sets, reps, and rest times:
 **After the last set:** a short, no-pressure prompt offers abs, cardio, or sauna (sauna only if you turned it on and accepted the safety list). "I'm done for today" is always the main button, and you can change your mind later from the workout page.
 - **Abs: top, middle and bottom.** A gym version (cable crunch, Pallof press, side plank hip dip, hanging leg raise) and a no-equipment version (crunch, bicycle crunch, side plank hip dip, reverse crunch, dead bug). One tap adds them to today's workout so you can log them.
 - **Cardio:** easy 10–20 min (recommended) or short intervals. Calories burned are estimated from standard exercise values for your weight, and aren't added back to your food target.
+- **One step at a time:** after cardio it offers sauna next (if it's on), and after your ab sets it offers what's left. Each step lets you stop there.
+- **Workout summary** when you wrap up: sets, volume, lifts progressed, PRs or baselines, and extras, plus how you're moving toward your goals (pounds to go and projected date, strength this month, workouts this week). It ends with a gentle refuel reminder: about 0.4 g of protein per kg of body weight in the next couple of hours (Schoenfeld & Aragon 2018), how much protein you have left today, and how much water to drink after the sauna.
 - **First session on a lift** sets your baseline. If you entered your maxes, it's compared against them, so the review shows real numbers instead of zeros.
 
 **Built to prevent stalls:**

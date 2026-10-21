@@ -585,6 +585,20 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .sheet-opt strong { font: 700 16px/1.2 var(--f-num); letter-spacing: 0.06em; text-transform: uppercase; }
 .sheet-opt span { font-size: 14px; color: var(--muted); }
 .sheet-opt:active { border-color: var(--accent); }
+.sheet-tall { max-height: 88vh; max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; }
+.sheet .stats { margin: 12px 0 8px; }
+.sum-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.sum-list li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.sum-list li:first-child { border-top: 0; }
+.sum-head { font: 700 13px/1.2 var(--f-num); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin: 16px 0 6px; }
+.sum-goals { list-style: none; margin: 0; padding: 0; }
+.sum-goals li { padding: 7px 0; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.4; }
+.sum-goals li:first-child { border-top: 0; }
+.sum-goals .eyebrow { display: block; margin-bottom: 2px; }
+.refuel { margin: 14px 0 4px; padding: 12px 14px; background: var(--good-bg); border-left: 3px solid var(--good); border-radius: 4px; }
+.refuel p { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink); }
+.refuel .sub-line { margin-top: 6px; color: var(--ink-2); }
+.sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
 .finish-btn { margin-bottom: var(--gap); }
 .finish-more { display: block; width: 100%; margin: 0 0 var(--gap); padding: 10px 0; background: none; border: 0; color: var(--ink-2); font: 600 14px/1.2 var(--f-body); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .moves li.zone { font: 700 12px/1.2 var(--f-num); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); border-top: 0; padding: 12px 0 2px; }
