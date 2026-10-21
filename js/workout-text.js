@@ -51,3 +51,42 @@ function parseLine(line, library) {
     status,
   };
 }
+
+// Parse a list of maxes: "Bench 280", "Fly machine 140 for 6-8", "40 lbs db curl and hammer curl".
+// No reps given means a 1-rep max.
+export function parseMaxes(text, library = []) {
+  const out = [];
+  for (const line of text.split(/\n|;/).map((l) => l.trim()).filter(Boolean)) {
+    let rest = ` ${line} `;
+    const notes = [];
+    let reps = 1;
+    const r = rest.match(/(?:for|x|×)\s*(\d+)(?:\s*[-–]\s*(\d+))?\s*(?:reps?)?/i);
+    if (r) { reps = +r[1]; rest = rest.replace(r[0], " "); if (r[2]) notes.push(`Range ${r[1]}–${r[2]}: used ${r[1]} reps`); }
+    let weight = null;
+    const plates = rest.match(/(\d+(?:\.\d+)?)\s*plates?(\s*(?:each|per|a)\s*side)?/i);
+    const lbs = rest.match(/(\d+(?:\.\d+)?)\s*(?:lbs?|pounds|#)?/i);
+    if (plates) {
+      const perSide = /side/i.test(plates[2] || "");
+      weight = +plates[1] * PLATE * (perSide ? 2 : 1);
+      notes.push(`${plates[1]} plate${+plates[1] === 1 ? "" : "s"}${perSide ? " each side" : ""} = ${weight} lb of plates`);
+      rest = rest.replace(plates[0], " ");
+    } else if (lbs) {
+      weight = +lbs[1];
+      rest = rest.replace(lbs[0], " ");
+    }
+    if (weight == null) { out.push({ line, error: "Couldn't find a weight." }); continue; }
+    if (reps === 1) notes.push("No reps given: treated as a 1-rep max");
+    const names = rest.replace(/\s+/g, " ").trim().split(/\s+(?:and|&)\s+|,\s*/i).map((n) => n.trim()).filter(Boolean);
+    for (const name of names.length ? names : [""]) {
+      const top = matchExercise(name, library)[0];
+      const matches = matchExercise(name, library);
+      out.push({
+        line, name, weight, reps, notes,
+        exercise: top && top.score >= MATCH_MAYBE ? top.ex.name : null,
+        options: matches.slice(0, 4).map((m) => m.ex.name),
+        status: top && top.score >= MATCH_SURE ? "sure" : top && top.score >= MATCH_MAYBE ? "check" : "new",
+      });
+    }
+  }
+  return out;
+}

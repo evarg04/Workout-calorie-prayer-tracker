@@ -478,3 +478,8 @@ ol.prayer { padding-left: 22px; }
 .parsed-top select { flex: 1; font-weight: 600; }
 .parsed-sets { font: 500 18px/1.2 var(--f-num); margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
 .parsed-sets strong { font-size: 22px; }
+
+/* ---------- maxes ---------- */
+.max-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.maxes-table td:nth-child(n+2), .maxes-table th:nth-child(n+2) { text-align: right; }
+.maxes-table td:last-child { width: 36px; }
