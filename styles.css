@@ -305,6 +305,9 @@ details[open] > summary::before { content: "−"; }
 .session-name { font: 700 26px/1.1 var(--f-num); margin: -2px 0 2px; }
 .program-option { border-top: 1px solid var(--line); padding: 12px 0; }
 .sec-head + .program-option, .hint + .program-option { border-top: 0; }
+.program-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.program-option.is-current .menu-name { color: var(--accent); }
+.tm-form { background: var(--surface-2); padding: 10px; border-radius: 4px; }
 .ex-card.is-done { border-color: var(--good); }
 .ex-card.is-collapsed { padding-bottom: 10px; }
 .ex-card.is-collapsed .ex-head { margin-bottom: 0; }
@@ -322,7 +325,8 @@ details[open] > summary::before { content: "−"; }
 .target-label { display: block; margin-bottom: 2px; }
 .target-up, .verdict-up { border-left-color: var(--good); }
 .target-up .target-label, .verdict-up .target-label { color: var(--good); }
-.target-reps { border-left-color: var(--accent); }
+.target-reps, .target-carry { border-left-color: var(--accent); }
+.target-carry .target-label { color: var(--accent); }
 .target-reps .target-label { color: var(--accent); }
 .target-deload, .verdict-down { border-left-color: var(--warn); }
 .target-deload .target-label, .verdict-down .target-label { color: var(--warn); }

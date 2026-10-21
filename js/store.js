@@ -36,6 +36,7 @@ function defaults() {
     plans: {},        // { "YYYY-MM-DD": { items: [{ slot, recipeId, mult, logged }], diet, meatless, targetCal, seedN } }
     webRecipes: [],   // recipes found on the web: { id, name, slot, per, flags, source, ingredients, steps }
     program: null,    // { id, start, tm: { liftName: trainingMax } }
+    programHistory: [], // past programs: [{ id, start, end }]
     settings: { apiKey: "" },
   };
 }
