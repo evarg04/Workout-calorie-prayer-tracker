@@ -529,3 +529,26 @@ textarea { -webkit-user-select: text; user-select: text; touch-action: manipulat
 /* ---------- USCCB readings ---------- */
 .inline-link { font: inherit; text-transform: none; letter-spacing: 0; padding: 0; text-decoration: underline; }
 .gospel-pasted { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+
+/* ---------- recovery ---------- */
+.card-summary { list-style: none; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; cursor: pointer;
+  font: 700 15px/1.2 var(--f-num); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); padding: 0; }
+.card-summary::-webkit-details-marker { display: none; }
+.card-summary::before { content: "+"; color: var(--accent); margin-right: 6px; }
+details[open] > .card-summary::before { content: "−"; }
+.card-summary > span:first-child { margin-right: auto; }
+details.card { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 0; }
+details.card[open] > .card-summary { margin-bottom: 10px; }
+.warm-steps { list-style: none; padding: 0; margin: 0; }
+.warm-steps > li { padding: 10px 0; border-top: 1px solid var(--line); }
+.warm-steps > li:first-child { border-top: 0; padding-top: 0; }
+.warm-steps .eyebrow { display: block; color: var(--accent); margin-bottom: 4px; }
+.moves { list-style: none; padding: 0; margin: 4px 0; }
+.moves li { padding: 6px 0; border-top: 1px dashed var(--line); }
+.moves li:first-child { border-top: 0; }
+.move-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.move-dose { font: 600 14px/1.2 var(--f-num); color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ramp { margin-top: 4px; }
+.evidence { padding-left: 18px; font-size: 14px; margin: 6px 0; }
+.evidence li { margin: 8px 0; }
+.sauna-hint { margin: 0 2px 10px; }
