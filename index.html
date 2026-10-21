@@ -3,13 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net https://universalis.com https://www.universalis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://api.anthropic.com https://cdn.jsdelivr.net; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
   <title>Temple Training</title>
   <meta name="description" content="Calories, macros, progressive overload, and a daily Catholic rule of life — body and soul.">
   <meta name="theme-color" content="#16181a">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Temple">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -30,6 +34,7 @@
     </div>
   </header>
   <nav class="subnav" id="subnav" aria-label="Section views" hidden></nav>
+  <div class="app-banner" id="app-banner" role="status" aria-live="polite" hidden></div>
 
   <main id="view" tabindex="-1"></main>
 
