@@ -982,35 +982,145 @@ function finisherSection(s, w) {
   const weight = latestWeight(s.weights) || s.profile.weightLb;
   return html`
     ${!w.finished ? html`<button type="button" class="btn ghost full finish-btn" data-action="finish-open">Finish workout</button>`
-      : !(extras.abs && extras.cardio && (extras.sauna || !saunaReady(s))) ? html`<button type="button" class="finish-more" data-action="finish-open">Add abs, cardio${saunaReady(s) ? " or sauna" : ""}</button>` : ""}
+      : html`<button type="button" class="btn ghost full finish-btn" data-action="wrap-up">${w.wrapped ? "See today's summary" : "Wrap up and see my summary"}</button>
+        ${extrasLeft(s, w).length ? html`<button type="button" class="finish-more" data-action="finish-open">Add ${listWords(extrasLeft(s, w).map((k) => EXTRA_NAME[k]))}</button>` : ""}`}
     ${extras.abs ? abCard(s) : ""}
     ${extras.cardio ? cardioCard(s, w, weight) : ""}
     ${extras.sauna && saunaReady(s) ? saunaMini(s, w, weight) : ""}`;
 }
 
-function finisherSheet(s, w) {
+const EXTRA_NAME = { abs: "abs", cardio: "cardio", sauna: "sauna" };
+const listWords = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} or ${a[a.length - 1]}`);
+
+// Extras still on offer today, in the order they make sense: abs, cardio, then sauna last.
+function extrasLeft(s, w) {
+  const x = w.extras || {};
+  return ["abs", "cardio", ...(saunaReady(s) ? ["sauna"] : [])].filter((k) => !x[k]);
+}
+
+// stage: "start" right after the last set, "next" after an extra is finished.
+function finisherSheet(s, w, stage = "start") {
   const sauna = saunaReady(s) ? saunaPlan(s.profile.sauna.level, latestWeight(s.weights) || s.profile.weightLb) : null;
+  const left = extrasLeft(s, w);
+  const opt = {
+    abs: html`<button type="button" class="sheet-opt" data-action="finish-pick" data-pick="abs"><strong>Abs</strong><span>Top, middle and bottom · about 10 min</span></button>`,
+    cardio: html`<button type="button" class="sheet-opt" data-action="finish-pick" data-pick="cardio"><strong>Cardio</strong><span>Easy 10–20 min, or short intervals</span></button>`,
+    sauna: sauna ? html`<button type="button" class="sheet-opt" data-action="finish-pick" data-pick="sauna"><strong>Sauna</strong><span>${sauna.time} · drink about 16 oz first</span></button>` : "",
+  };
+  const head = stage === "next"
+    ? [`${ui.justDid === "cardio" ? "Cardio" : "Abs"} done. Great job.`, left.length ? "Anything else, or call it a day? Either is a good choice." : ""]
+    : ["Workout complete. Nice work.", "Want to add anything? Totally optional. Rest is part of training too."];
   return html`
     <div class="sheet-backdrop" data-action="finish-close"></div>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-      <h2 id="sheet-title">Workout complete. Nice work.</h2>
-      <p class="hint">Want to add anything? Totally optional. Rest is part of training too.</p>
-      <div class="sheet-options">
-        <button type="button" class="sheet-opt" data-action="finish-pick" data-pick="abs"><strong>Abs</strong><span>Top, middle and bottom · about 10 min</span></button>
-        <button type="button" class="sheet-opt" data-action="finish-pick" data-pick="cardio"><strong>Cardio</strong><span>Easy 10–20 min, or short intervals</span></button>
-        ${sauna ? html`<button type="button" class="sheet-opt" data-action="finish-pick" data-pick="sauna"><strong>Sauna</strong><span>${sauna.time} · drink about 16 oz first</span></button>` : ""}
-      </div>
-      <button type="button" class="btn full" data-action="finish-pick" data-pick="done">I'm done for today</button>
+      <h2 id="sheet-title">${head[0]}</h2>
+      ${head[1] ? html`<p class="hint">${head[1]}</p>` : ""}
+      ${left.length ? html`<div class="sheet-options">${left.map((k) => opt[k])}</div>` : ""}
+      <button type="button" class="btn full" data-action="finish-pick" data-pick="done">${stage === "next" ? "Wrap up and see my summary" : "I'm done for today"}</button>
     </div>`[RAW];
 }
 
-function showFinisherSheet() {
+function openSheet(markup) {
   closeFinisherSheet();
-  const s = getState();
   const el = document.createElement("div");
   el.id = "finisher";
-  el.innerHTML = finisherSheet(s, workoutFor(s, ui.date));
+  el.innerHTML = markup;
   document.body.append(el);
+  el.querySelector(".sheet")?.focus?.();
+}
+
+function showFinisherSheet(stage) {
+  const s = getState();
+  openSheet(finisherSheet(s, workoutFor(s, ui.date), stage));
+}
+
+// After an extra is finished: offer what's left, or go straight to the summary.
+function afterExtra(kind) {
+  ui.justDid = kind;
+  const s = getState();
+  if (extrasLeft(s, workoutFor(s, ui.date)).length) return showFinisherSheet("next");
+  update((st) => { ensureWorkout(st, ui.date).wrapped = true; });
+  showSummary();
+}
+
+function showSummary() {
+  const s = getState();
+  openSheet(summarySheet(s, workoutFor(s, ui.date), ui.date));
+}
+
+// Post-workout protein: ~0.4 g/kg in the meal after training (Schoenfeld & Aragon 2018),
+// which lands around 30–50 g for most adults.
+const refuelGrams = (lb) => Math.max(25, Math.min(50, Math.round((lb * 0.453592 * 0.4) / 5) * 5));
+
+function summarySheet(s, w, key) {
+  const exById = Object.fromEntries(s.exercises.map((e) => [e.id, e]));
+  const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])].filter((id) => exById[id]);
+  const rows = reviewRows(s, w, key, order, exById);
+  const count = (k) => rows.filter((r) => r.verdict.kind === k).length;
+  const prs = rows.reduce((n, r) => n + r.prs, 0);
+  const volume = Math.round(rows.reduce((n, r) => n + r.volume, 0));
+  const weight = latestWeight(s.weights) || s.profile.weightLb;
+  const cardio = w.cardio || [];
+  const cardioMin = cardio.reduce((n, c) => n + c.min, 0);
+  const cardioKcal = cardio.reduce((n, c) => n + caloriesBurned(CARDIO_TYPES[c.type]?.met || 6, weight, c.min), 0);
+  const absDone = (w.plan?.items || []).filter((i) => i.extra).some((i) => w.sets.some((x) => x.exId === i.exId)) || w.extras?.abs;
+  const extras = [absDone && "Abs", cardioMin && `Cardio ${cardioMin} min (about ${cardioKcal} kcal)`, w.sauna?.min && `Sauna ${w.sauna.min} min`].filter(Boolean);
+  const highlight = rows.filter((r) => r.prs || r.verdict.kind === "up").slice(0, 3);
+
+  // Toward the goals
+  const target = targetsFor(s);
+  const food = totals(s.foods[key]);
+  const trend = weightTrend(s.weights, 21, key);
+  const goal = s.profile.goalWeightLb;
+  const goals = [];
+  if (weight && goal) {
+    const toGo = Math.abs(weight - goal);
+    if (toGo < 1) goals.push(["Weight", `You're at your ${goal} lb goal. Training now keeps the muscle you built.`]);
+    else if (trend && target.losing && -trend.perWeek > 0.1) {
+      const eta = new Date(parseKey(key).getTime() + (toGo / -trend.perWeek) * 7 * 86400000);
+      goals.push(["Weight", `${toGo.toFixed(1)} lb to ${goal} lb, losing ${(-trend.perWeek).toFixed(1)} lb a week. On this pace: ${eta.toLocaleDateString(undefined, { month: "long", day: "numeric" })}.`]);
+    } else goals.push(["Weight", `${toGo.toFixed(1)} lb to ${goal} lb. ${trend ? "Keep weighing in; the trend is building." : "Weigh in most mornings and your pace shows up here within a week."}`]);
+  }
+  const strength = strengthSummary(s.workouts, s.exercises, key);
+  if (strength) goals.push(["Strength", strength.up >= strength.down ? `Holding or rising on ${strength.up} of ${strength.total} lifts this month. You're keeping your muscle.` : `Down on ${strength.down} of ${strength.total} lifts this month. Extra sleep and protein usually fix this.`]);
+  else if (count("new")) goals.push(["Strength", `Baselines set on ${count("new")} lift${count("new") === 1 ? "" : "s"}. From next session on, this tracks whether you're getting stronger.`]);
+  else if (count("up")) goals.push(["Strength", `Progressed on ${count("up")} of ${rows.length} lifts today.`]);
+  const weekDone = Array.from({ length: 7 }, (_, i) => s.workouts[addDays(key, -i)]).filter((x) => x?.sets?.length).length;
+  const perWeek = s.program ? PROGRAMS[s.program.id]?.days : null;
+  goals.push(["This week", perWeek ? `${weekDone} of ${perWeek} workouts done.${weekDone >= perWeek ? " Full week. Well earned." : ""}` : `${weekDone} workout${weekDone === 1 ? "" : "s"} in the last 7 days.`]);
+
+  // Gentle refuel reminder
+  const grams = refuelGrams(weight);
+  const proteinLeft = Math.max(0, Math.round(target.protein - food.p));
+  const refuel = proteinLeft
+    ? `Don't forget to refuel. Your muscles are primed for protein now. Aim for about ${grams} g with some carbs in the next couple of hours. You have ${proteinLeft} g left to reach ${target.protein} g today.`
+    : `You've already hit your ${target.protein} g of protein today. Nice. A meal with some carbs will still help you recover.`;
+  const water = w.sauna?.min ? "After the sauna, drink about 20–24 oz of fluid for every pound you lost, with a pinch of salt or a sports drink." : "Drink some water too, especially if you sweated a lot.";
+
+  return html`
+    <div class="sheet-backdrop" data-action="finish-close"></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <h2 id="sheet-title">Today's session</h2>
+      <p class="hint">${w.plan?.dayName ? `${w.plan.dayName}. ` : ""}${count("new") === rows.length ? "Baselines set. Next time you'll see exactly what to beat." : count("up") ? "You moved forward today." : "You showed up and did the work. That's what counts."}</p>
+      <div class="stats stats-4">
+        ${stat("Sets", w.sets.length, "logged")}
+        ${stat("Volume", volume >= 10000 ? `${(volume / 1000).toFixed(1)}k` : volume.toLocaleString(), "lb moved")}
+        ${count("new") === rows.length ? stat("Lifts", rows.length, "trained") : stat("Progressed", count("up"), `of ${rows.length} lifts`, count("up") ? "good" : "")}
+        ${count("new") ? stat("Baselines", count("new"), "set today", "good") : stat("PRs", prs, "today", prs ? "good" : "")}
+      </div>
+      ${extras.length ? html`<p class="line"><span class="eyebrow">Extras</span> ${extras.join(" · ")}</p>` : ""}
+      ${highlight.length ? html`<ul class="sum-list">${highlight.map((r) => html`<li><strong>${r.ex.name}</strong> ${r.prs ? html`<span class="tag pr">${r.prs} PR</span>` : html`<span class="chip chip-up">${VERDICT_LABEL.up}</span>`}</li>`)}</ul>` : ""}
+      <h3 class="sum-head">Toward your goals</h3>
+      <ul class="sum-goals">${goals.map(([k, v]) => html`<li><span class="eyebrow">${k}</span> ${v}</li>`)}</ul>
+      <div class="refuel">
+        <p>${refuel}</p>
+        <p class="sub-line">${water}</p>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" class="btn ghost" data-action="finish-close">Close</button>
+        <button type="button" class="btn" data-goto="food" data-sub="log">Log a meal</button>
+      </div>
+    </div>`[RAW];
 }
 
 function closeFinisherSheet() { document.getElementById("finisher")?.remove(); }
@@ -1245,8 +1355,8 @@ function feedbackFor(s, ex, rxItem, prev, sets) {
   });
 }
 
-function workoutReview(s, w, key, order, exById) {
-  const rows = order.map((id) => {
+function reviewRows(s, w, key, order, exById) {
+  return order.map((id) => {
     const ex = exById[id];
     const sets = w.sets.filter((x) => x.exId === id);
     if (!sets.length) return null;
@@ -1263,6 +1373,10 @@ function workoutReview(s, w, key, order, exById) {
     const prs = sets.filter((x) => isPR(s.workouts, id, x, key, s.baselines?.[id])).length;
     return { ex, verdict, next, prs, volume: sets.reduce((t, x) => t + (+x.weight || 0) * +x.reps, 0) };
   }).filter(Boolean);
+}
+
+function workoutReview(s, w, key, order, exById) {
+  const rows = reviewRows(s, w, key, order, exById);
   if (!rows.length) return "";
   const count = (k) => rows.filter((r) => r.verdict.kind === k).length;
   const prs = rows.reduce((t, r) => t + r.prs, 0);
@@ -2125,7 +2239,7 @@ const forms = {
     const set = { id: uid(), exId: form.dataset.ex, weight: +d.weight, reps: +d.reps };
     if (d.rir !== "" && d.rir !== undefined) set.rir = +d.rir;
     if (form.dataset.rx) set.rx = form.dataset.rx;
-    let justFinished = false;
+    let justFinished = false, absDone = false;
     update((s) => {
       const w = ensureWorkout(s, ui.date);
       const wasComplete = programComplete(w);
@@ -2133,8 +2247,11 @@ const forms = {
       const rxItem = w.plan?.items?.find((i) => i.exId === set.exId);
       if (w.sets.filter((x) => x.exId === set.exId).length >= (rxItem?.sets ?? 99)) ui.openEx = null;
       justFinished = !wasComplete && programComplete(w) && !w.finished;
+      const abs = (w.plan?.items || []).filter((i) => i.extra);
+      absDone = !justFinished && w.finished && !w.wrapped && abs.some((i) => i.exId === set.exId) && abs.every((i) => w.sets.filter((x) => x.exId === i.exId).length >= i.sets);
     });
     if (justFinished) { stopRest(); return showFinisherSheet(); }
+    if (absDone) { stopRest(); return afterExtra("abs"); }
     if (form.dataset.rest) startRest(+form.dataset.rest);
   },
   "new-ex"(d) {
@@ -2164,12 +2281,14 @@ const forms = {
   "log-cardio"(d) {
     const min = Math.max(1, Math.min(180, +d.min || 0));
     update((st) => { (ensureWorkout(st, ui.date).cardio ??= []).push({ type: d.type, min }); });
-    toast(`${min} min of cardio logged`);
+    afterExtra("cardio");
   },
   "log-sauna"(d) {
     const min = Math.max(0, Math.min(60, +d.min || 0));
     update((st) => { ensureWorkout(st, ui.date).sauna = min ? { min } : undefined; });
-    toast(min ? `${min} min sauna logged. Rehydrate well` : "Cleared");
+    if (!min) return toast("Cleared");
+    update((st) => { ensureWorkout(st, ui.date).wrapped = true; });
+    showSummary();
   },
   "sauna-on"(d) {
     if (!d.ack) return toast("Please read and check the safety list first");
@@ -2312,6 +2431,7 @@ const actions = {
   rest(el) { startRest(+el.dataset.sec); },
   "finish-open"() { showFinisherSheet(); },
   "finish-close"() { closeFinisherSheet(); },
+  "wrap-up"() { update((st) => { ensureWorkout(st, ui.date).wrapped = true; }); showSummary(); },
   "finish-pick"(el) {
     const pick = el.dataset.pick;
     closeFinisherSheet();
@@ -2320,7 +2440,7 @@ const actions = {
       w.finished = true;
       if (pick !== "done") (w.extras ??= {})[pick] = true;
     });
-    if (pick === "done") return toast("Great session. Recovery is where you grow. Rest up.");
+    if (pick === "done") { update((st) => { ensureWorkout(st, ui.date).wrapped = true; }); return showSummary(); }
     document.getElementById(`${pick}-card`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   },
   "ab-kind"(el) { ui.abKind = el.dataset.kind; render(); document.getElementById("abs-card")?.scrollIntoView({ block: "start" }); },
@@ -2474,6 +2594,7 @@ document.addEventListener("click", (e) => {
   if (tab) return go(tab.dataset.tab);
   const link = e.target.closest("[data-goto]");
   if (link) {
+    closeFinisherSheet();
     if (link.dataset.sub) ui.sub[link.dataset.goto] = link.dataset.sub;
     return go(link.dataset.goto);
   }
