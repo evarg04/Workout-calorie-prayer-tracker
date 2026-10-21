@@ -27,7 +27,7 @@ export function friendlyError(Anthropic, err) {
   return err;
 }
 
-export async function ask({ apiKey, system, content, tools, effort = "medium" }) {
+export async function ask({ apiKey, system, content, tools, effort = "medium", format }) {
   const { Anthropic, client } = await getClient(apiKey);
   const messages = [{ role: "user", content }];
   try {
@@ -38,7 +38,7 @@ export async function ask({ apiKey, system, content, tools, effort = "medium" })
       response = await client.beta.messages.create({
         model: MODEL,
         max_tokens: 16000,
-        output_config: { effort },
+        output_config: format ? { effort, format } : { effort },
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         system,
@@ -174,4 +174,56 @@ export async function askCoach({ apiKey, exercise, question, recent }) {
     apiKey, system: COACH_SYSTEM, effort: "low",
     content: `Exercise: ${exercise}\nRecent sessions (newest first): ${recent || "none logged"}\n\nQuestion: ${question}`,
   });
+}
+
+// ---------- nutrition label scanning ----------
+
+const LABEL_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["found", "name", "servingSize", "basis", "calories", "protein", "carbs", "fat", "confidence", "notes"],
+  properties: {
+    found: { type: "boolean" },
+    name: { type: "string" },
+    servingSize: { type: "string" },
+    basis: { type: "string", enum: ["per serving", "per 100 g", "whole item", "estimated from photo"] },
+    calories: { type: "number" },
+    protein: { type: "number" },
+    carbs: { type: "number" },
+    fat: { type: "number" },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+    notes: { type: "string" },
+  },
+};
+
+const LABEL_SYSTEM = `You read nutrition information from photos for a food-logging app.
+The photo is usually a Nutrition Facts label, but may be a restaurant menu, a package front, or an app screenshot showing macros.
+Report calories and grams of protein, total carbohydrate and total fat for ONE serving exactly as printed. If the label has several columns (per serving / per container, as sold / prepared), use the per-serving, as-sold column and say so in notes. If only per-100 g values are shown, report those with basis "per 100 g".
+Give the food a short name from the package or menu if visible, else a plain description.
+If no nutrition numbers are visible but the photo clearly shows food, estimate a typical portion, set basis "estimated from photo" and confidence "low". If you cannot tell, set found false.
+Never guess digits you cannot read; lower the confidence and explain in notes instead.`;
+
+export async function readNutrition({ apiKey, base64, mediaType }) {
+  const text = await ask({
+    apiKey, system: LABEL_SYSTEM, effort: "low", format: { type: "json_schema", schema: LABEL_SCHEMA },
+    content: [
+      { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+      { type: "text", text: "Read the nutrition information in this photo." },
+    ],
+  });
+  const r = JSON.parse(text);
+  const n = (v) => (Number.isFinite(+v) && +v >= 0 ? Math.round(+v * 10) / 10 : 0);
+  return { ...r, calories: n(r.calories), protein: n(r.protein), carbs: n(r.carbs), fat: n(r.fat) };
+}
+
+// Shrink a camera photo before upload: faster, cheaper, and well within the image size limits.
+export async function photoToBase64(file, maxSide = 1568) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+  return { dataUrl, base64: dataUrl.split(",")[1], mediaType: "image/jpeg" };
 }

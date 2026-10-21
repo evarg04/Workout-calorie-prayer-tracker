@@ -8,7 +8,7 @@ import { generateReflection, renderMarkdown } from "./reflect.js";
 import { DIETS } from "./recipes.js";
 import { SLOTS, buildPlan, swapSlot, hydrate, planTotals, recipePool, scaled, groceryList } from "./mealplan.js";
 import { PROGRAMS, CATALOG, MUSCLES, todaysSession, weeklyVolume, round5 } from "./programs.js";
-import { findWebRecipes, lookupExercise, askCoach } from "./ai.js";
+import { findWebRecipes, lookupExercise, askCoach, readNutrition, photoToBase64 } from "./ai.js";
 
 // ---------- tiny templating: interpolations are escaped unless wrapped in raw() ----------
 const RAW = Symbol("raw");
@@ -324,6 +324,86 @@ function webRecipesCard(s) {
     </section>`;
 }
 
+const mealForNow = () => { const h = new Date().getHours(); return h < 11 ? "Breakfast" : h < 15 ? "Lunch" : h < 21 ? "Dinner" : "Snacks"; };
+
+function scanTotalText(per, servings) {
+  const x = (v) => Math.round(v * servings * 10) / 10;
+  return `Logs ${Math.round(per.calories * servings)} kcal · ${x(per.protein)} g protein · ${x(per.carbs)} g carbs · ${x(per.fat)} g fat`;
+}
+
+function scanCard(s) {
+  const sc = ui.scan;
+  const picker = (label, ghost) => html`
+    <label class="btn ${ghost ? "ghost" : ""} file-btn">${label}
+      <input type="file" accept="image/*" capture="environment" data-action="scan-photo" hidden>
+    </label>`;
+  if (!s.settings.apiKey) {
+    return html`<section class="card"><div class="sec-head"><h2>Scan a nutrition label</h2></div>
+      <p class="hint">Add your Anthropic API key on the Me tab, then take a photo of any nutrition label, menu or app screen and the macros fill in for you.</p></section>`;
+  }
+  if (!sc) {
+    return html`<section class="card"><div class="sec-head"><h2>Scan a nutrition label</h2></div>
+      <p class="hint">Photo of a label, menu or app screen. The macros fill in; you check them and log.</p>
+      ${picker("Take photo of label")}</section>`;
+  }
+  if (sc.loading) {
+    return html`<section class="card"><div class="sec-head"><h2>Reading the label…</h2></div>
+      <div class="scan-row">${sc.preview ? html`<img class="scan-thumb" src="${sc.preview}" alt="Your photo">` : ""}<p class="hint">Reading calories, protein, carbs and fat…</p></div></section>`;
+  }
+  if (sc.error || !sc.data?.found) {
+    return html`<section class="card"><div class="sec-head"><h2>Scan a nutrition label</h2></div>
+      <div class="scan-row">${sc.preview ? html`<img class="scan-thumb" src="${sc.preview}" alt="Your photo">` : ""}
+        <p class="${sc.error ? "error" : "hint"}">${sc.error || "Couldn't find nutrition numbers in that photo. Get closer, keep the label flat, and use good light."}</p></div>
+      <div class="row">${picker("Try again")}<button type="button" class="btn ghost" data-action="scan-cancel">Cancel</button></div></section>`;
+  }
+  const d = sc.data;
+  const warn = d.basis === "per 100 g" ? "These numbers are per 100 g. Set servings to grams eaten ÷ 100 (e.g. 150 g = 1.5)."
+    : d.basis === "estimated from photo" ? "No label found, so this is an estimate from the photo. Check it, or log by hand."
+    : d.confidence !== "high" ? "Some numbers were hard to read. Check them against the label." : "";
+  return html`
+    <section class="card scan-card">
+      <div class="sec-head"><h2>Check and log</h2><span class="chip chip-${d.confidence === "high" ? "good" : "warning"}">${d.confidence} confidence</span></div>
+      <div class="scan-row"><img class="scan-thumb" src="${sc.preview}" alt="Your photo">
+        <p class="hint">${d.basis}${d.servingSize ? ` · serving: ${d.servingSize}` : ""}${d.notes ? `. ${d.notes}` : ""}</p></div>
+      ${warn ? html`<p class="target target-deload"><span class="target-label">Check</span> ${warn}</p>` : ""}
+      <form data-form="scan-log" class="grid-form">
+        <label class="span2">Food<input name="name" value="${d.name}" required></label>
+        <label>Calories<input name="cal" type="number" inputmode="decimal" min="0" step="0.1" value="${d.calories}" data-live="scan"></label>
+        <label>Protein g<input name="p" type="number" inputmode="decimal" min="0" step="0.1" value="${d.protein}" data-live="scan"></label>
+        <label>Carbs g<input name="c" type="number" inputmode="decimal" min="0" step="0.1" value="${d.carbs}" data-live="scan"></label>
+        <label>Fat g<input name="f" type="number" inputmode="decimal" min="0" step="0.1" value="${d.fat}" data-live="scan"></label>
+        <div class="field span2">
+          <span class="field-label">Servings eaten</span>
+          <div class="stepper">
+            <button type="button" data-step="-0.25" aria-label="Quarter serving less">−</button>
+            <input name="servings" type="number" inputmode="decimal" min="0.25" step="0.25" value="1" data-live="scan" aria-label="Servings eaten">
+            <button type="button" data-step="0.25" aria-label="Quarter serving more">+</button>
+          </div>
+        </div>
+        <label class="span2">Meal<select name="meal">${MEALS.map((m) => html`<option ${m === mealForNow() ? "selected" : ""}>${m}</option>`)}</select></label>
+        <label class="check span2"><input type="checkbox" name="save"> Save to My foods (1 serving) for one-tap logging</label>
+        <p class="scan-total span2" id="scan-total">${scanTotalText(d, 1)}</p>
+        <button class="btn span2 btn-log" type="submit">Log it</button>
+        <button class="btn ghost span2" type="button" data-action="scan-cancel">Cancel</button>
+      </form>
+    </section>`;
+}
+
+async function startScan(file) {
+  ui.scan = { loading: true };
+  render();
+  try {
+    const photo = await photoToBase64(file);
+    ui.scan = { loading: true, preview: photo.dataUrl };
+    render();
+    const data = await readNutrition({ apiKey: getState().settings.apiKey, base64: photo.base64, mediaType: photo.mediaType });
+    ui.scan = { preview: photo.dataUrl, data };
+  } catch (err) {
+    ui.scan = { preview: ui.scan?.preview, error: err.message || "Couldn't read that photo." };
+  }
+  render();
+}
+
 function renderFood(s) {
   const key = ui.date;
   const target = targetsFor(s);
@@ -341,6 +421,8 @@ function renderFood(s) {
   return html`
     ${summary}
     ${penanceCard(key)}
+
+    ${scanCard(s)}
 
     <section class="card">
       <div class="sec-head"><h2>Add food</h2></div>
@@ -1268,6 +1350,18 @@ const forms = {
     render();
     toast("Exercise verified and added");
   },
+  "scan-log"(d) {
+    const k = Math.max(0.25, +d.servings || 1);
+    const r1 = (v) => Math.round(num(v) * k * 10) / 10;
+    const entry = { id: uid(), name: `${d.name.trim()}${k !== 1 ? ` ×${k}` : ""}`, meal: d.meal, cal: Math.round(num(d.cal) * k), p: r1(d.p), c: r1(d.c), f: r1(d.f) };
+    update((st) => {
+      (st.foods[ui.date] ??= []).push(entry);
+      if (d.save && !st.savedFoods.some((x) => x.name === d.name.trim())) st.savedFoods.push({ name: d.name.trim(), cal: num(d.cal), p: num(d.p), c: num(d.c), f: num(d.f) });
+    });
+    ui.scan = null;
+    render();
+    toast(`Logged ${entry.cal} kcal`);
+  },
   async "ask-coach"(d, form) {
     const s = getState();
     const ex = s.exercises.find((e) => e.id === form.dataset.ex);
@@ -1425,6 +1519,7 @@ const actions = {
   },
   rest(el) { startRest(+el.dataset.sec); },
   "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
+  "scan-cancel"() { ui.scan = null; render(); },
   "ex-pick"(el) { ui.exPick = el.dataset.name; ui.exLookup = null; render(); },
   "ex-clear"() { ui.exQuery = ""; ui.exPick = null; ui.exLookup = null; render(); },
   "ex-lookup"(el) { ui.exQuery = el.dataset.q; startLookup(el.dataset.q); },
@@ -1467,6 +1562,10 @@ const actions = {
 };
 
 const changes = {
+  "scan-photo"(el) {
+    const file = el.files[0];
+    if (file) startScan(file);
+  },
   rule(el) { update((s) => { ensureFaith(s, ui.date).checks[el.dataset.id] = el.checked; }); },
   "toggle-offered"(el) { update((s) => { ensureWorkout(s, ui.date).offered = el.checked; }); },
   "chart-ex"(el) { ui.chartEx = el.value; render(); },
@@ -1495,15 +1594,25 @@ document.addEventListener("click", (e) => {
   const step = e.target.closest("button[data-step]");
   if (step) {
     const input = step.parentElement.querySelector("input");
-    const next = Math.max(+input.min || 0, Math.round(((+input.value || 0) + +step.dataset.step) * 2) / 2);
+    const next = Math.max(+input.min || 0, Math.round(((+input.value || 0) + +step.dataset.step) * 4) / 4);
     input.value = next;
+    refreshScanTotal();
     return;
   }
   const act = e.target.closest("button[data-action]");
   if (act && actions[act.dataset.action]) actions[act.dataset.action](act);
 });
 
+function refreshScanTotal() {
+  const form = document.querySelector('form[data-form="scan-log"]');
+  const out = document.getElementById("scan-total");
+  if (!form || !out) return;
+  const v = (n) => +form.elements[n].value || 0;
+  out.textContent = scanTotalText({ calories: v("cal"), protein: v("p"), carbs: v("c"), fat: v("f") }, Math.max(0.25, v("servings") || 1));
+}
+
 document.addEventListener("input", (e) => {
+  if (e.target.dataset?.live === "scan") return refreshScanTotal();
   if (e.target.dataset?.live !== "ex-query") return;
   ui.exQuery = e.target.value;
   ui.exPick = null;
