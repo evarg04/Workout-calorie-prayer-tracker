@@ -38,6 +38,16 @@ export function suggestNext(ex, workouts, beforeDate = dateKey(), rx) {
   if (!past.length) {
     const n = ex.sets || 3;
     const range = ex.repMin === ex.repMax ? `${ex.repMin}` : `${ex.repMin}–${ex.repMax}`;
+    // New rep range (e.g. after switching programs): carry strength over from any past sessions.
+    const earlier = rx ? history(workouts, ex.id).filter((h) => h.date < beforeDate).slice(0, 3) : [];
+    if (earlier.length) {
+      const best = Math.max(...earlier.map((h) => bestE1rm(h.sets)));
+      const w = roundTo(best / (1 + (ex.repMin + 2) / 30), ex.increment >= 5 ? 5 : 2.5);
+      return {
+        weight: w, reps: ex.repMin, sets: n, kind: "carry",
+        note: `New rep range for you. From your history (est. 1RM ${Math.round(best)} lb), start at ${w} lb × ${range}, leaving about 2 reps in the tank. The app adjusts from there.`,
+      };
+    }
     return { weight: null, reps: ex.repMin, sets: n, note: `First time: pick a weight you could do for ${ex.repMax + 2} reps, then ${n} × ${range}.` };
   }
   const last = workingSets(past[0].sets);

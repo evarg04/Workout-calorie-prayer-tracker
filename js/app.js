@@ -413,21 +413,60 @@ function est1rm(s, name) {
 }
 
 function programList(s) {
+  const current = s.program?.id;
   return html`
     ${Object.entries(PROGRAMS).map(([id, p]) => html`
-      <div class="program-option">
-        <div class="menu-name">${p.name}</div>
-        <div class="small muted">${p.author} · ${p.days} days/week · ${p.level}</div>
+      <div class="program-option${id === current ? " is-current" : ""}">
+        <div class="program-top"><span class="menu-name">${p.name}</span>${id === current ? html`<span class="chip chip-good">Current</span>` : ""}</div>
+        <div class="sub-line">${p.author} · ${p.days} days/week · ${p.level}</div>
         <p class="small">${p.bestFor}</p>
-        ${id === "bbb531" ? html`
-          <form data-form="start-program" data-id="${id}" class="grid-form">
+        ${ui.pickProgram === id ? html`
+          <form data-form="start-program" data-id="${id}" class="grid-form tm-form">
+            <p class="hint span2">5/3/1 sets its weights from your 1-rep maxes. These are filled in from your logs where possible; adjust if you know your true max. Your Training Max is set to 90% of each.</p>
             ${TM_LIFTS.map((n) => html`<label>${n} 1RM (lb)<input name="${n}" type="number" inputmode="numeric" min="0" step="5" value="${est1rm(s, n) || ""}" required></label>`)}
-            <button class="btn span2" type="submit">${s.program?.id === id ? "Restart" : "Start"} 5/3/1</button>
-          </form>
-          <p class="tiny muted">Use a recent true max, or the estimate from your logs. Training Max is set to 90% of it.</p>`
-        : html`<form data-form="start-program" data-id="${id}"><button class="btn ghost" type="submit">${s.program?.id === id ? "Restart" : "Start"} this program</button></form>`}
+            <button class="btn span2" type="submit">Start 5/3/1</button>
+            <button class="btn ghost span2" type="button" data-action="pick-program" data-id="">Cancel</button>
+          </form>`
+        : id === current ? "" : html`<button type="button" class="btn ghost" data-action="pick-program" data-id="${id}">${current ? "Switch to this program" : "Start this program"}</button>`}
       </div>`)}
-    ${s.program ? html`<button type="button" class="btn ghost" data-action="stop-program">Stop program (train freestyle)</button>` : ""}`;
+    ${current ? html`<button type="button" class="btn ghost" data-action="stop-program">Stop program (train freestyle)</button>` : ""}`;
+}
+
+function programHistoryCard(s) {
+  const past = [...(s.programHistory || [])].reverse();
+  if (!past.length) return "";
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Program history</h2></div>
+      <p class="hint">Your lift history, PRs and weights carry across every program.</p>
+      <ul class="entries">${past.map((h) => html`<li><span>${PROGRAMS[h.id]?.name || h.id}<span class="sub-line">${fmtDate(h.start)} – ${fmtDate(h.end)}</span></span><span class="sub-line">${Object.entries(s.workouts).filter(([k, w]) => w.plan?.programId === h.id && k >= h.start && k <= h.end).length} sessions</span></li>`)}</ul>
+    </section>`;
+}
+
+// Record a finished program in the history, if any session was actually trained on it.
+function archiveProgram(st) {
+  const prog = st.program;
+  if (!prog) return;
+  const trained = Object.entries(st.workouts).some(([k, w]) => k >= prog.start && w.plan?.programId === prog.id && w.sets?.length);
+  if (trained) (st.programHistory ??= []).push({ id: prog.id, start: prog.start, end: ui.date });
+}
+
+function startProgram(id, tm = {}) {
+  const s = getState();
+  const from = s.program && PROGRAMS[s.program.id];
+  if (from && !confirm(`Switch from ${from.name} to ${PROGRAMS[id].name}?\n\nYour lift history, PRs and weights all carry over. Only the daily plan changes.`)) return;
+  update((st) => {
+    archiveProgram(st);
+    st.program = { id, start: ui.date, tm };
+    // Drop today's old-program plan if nothing was logged yet, so the new program's day loads.
+    const w = st.workouts[ui.date];
+    if (w?.plan && w.plan.programId !== id && !w.sets.length) { delete w.plan; w.order = []; }
+  });
+  ui.pickProgram = null;
+  ui.sub.train = "workout";
+  render();
+  window.scrollTo(0, 0);
+  toast(`${PROGRAMS[id].name} started`);
 }
 
 function programCard(s, key, w) {
@@ -496,9 +535,10 @@ function renderTrain(s) {
       ${s.program && PROGRAMS[s.program.id] ? programCard(s, key, w) : ""}
       <section class="card">
         <div class="sec-head"><h2>${s.program ? "Switch program" : "Choose a proven program"}</h2></div>
-        ${s.program ? "" : html`<p class="hint">Each one has a long track record. The app runs the progression, schedules deloads, and tracks weekly volume so you keep progressing.</p>`}
+        <p class="hint">${s.program ? "Switching keeps all your numbers. Lifts you've done before start from your existing strength, even in a new rep range." : "Each one has a long track record. The app runs the progression, schedules deloads, and tracks weekly volume so you keep progressing."}</p>
         ${programList(s)}
       </section>
+      ${programHistoryCard(s)}
       <section class="card">
         <div class="sec-head"><h2>Exercise library</h2><span class="sec-meta">${s.exercises.length} exercises</span></div>
         <p class="hint">Double progression: work in the rep range. Once every set hits the top, add the increment.</p>
@@ -738,7 +778,7 @@ function workoutReview(s, w, key, order, exById) {
     </section>`;
 }
 
-const TARGET_LABEL = { up: "Add weight", deload: "Deload", reps: "Beat last time", new: "Target" };
+const TARGET_LABEL = { up: "Add weight", deload: "Deload", reps: "Beat last time", new: "Target", carry: "Carried over" };
 
 function exerciseCard(s, ex, w, key, open = true) {
   const sets = w.sets.filter((x) => x.exId === ex.id);
@@ -1260,11 +1300,9 @@ const forms = {
     update((s) => { s.exercises.push({ id: uid(), name: d.name.trim(), kind: d.kind, muscle: d.muscle, repMin, repMax, increment: +d.increment }); });
   },
   "start-program"(d, form) {
-    const id = form.dataset.id;
     const tm = {};
-    if (id === "bbb531") TM_LIFTS.forEach((n) => { tm[n] = round5(+d[n] * 0.9); });
-    update((s) => { s.program = { id, start: ui.date, tm }; });
-    toast(`Started ${PROGRAMS[id].name}`);
+    TM_LIFTS.forEach((n) => { tm[n] = round5(+d[n] * 0.9); });
+    startProgram(form.dataset.id, tm);
   },
   prefs(d) {
     update((s) => { s.profile.diet = d.diet; s.profile.meatlessFridays = !!d.meatlessFridays; });
@@ -1372,7 +1410,18 @@ const actions = {
     });
   },
   "stop-program"() {
-    if (confirm("Stop following this program? Your logged workouts stay.")) update((st) => { st.program = null; });
+    if (!confirm("Stop following this program? Your logged workouts and numbers stay.")) return;
+    update((st) => {
+      archiveProgram(st);
+      st.program = null;
+    });
+  },
+  "pick-program"(el) {
+    const id = el.dataset.id;
+    if (id === "bbb531") { ui.pickProgram = id; return render(); }
+    ui.pickProgram = null;
+    if (id) startProgram(id);
+    else render();
   },
   rest(el) { startRest(+el.dataset.sec); },
   "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
