@@ -3,13 +3,14 @@ import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weekl
 import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, setFeedback, exerciseVerdict, e1rm, workingWeight } from "./lifts.js";
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
+import { APP_VERSION } from "./version.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, fetchGospel, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
 import { DIETS } from "./recipes.js";
 import { SLOTS, buildPlan, swapSlot, hydrate, planTotals, recipePool, scaled, groceryList } from "./mealplan.js";
 import { PROGRAMS, CATALOG, MUSCLES, todaysSession, weeklyVolume, round5, sessionsBefore } from "./programs.js";
-import { findWebRecipes, lookupExercise, askCoach, readNutrition, photoToBase64 } from "./ai.js";
+import { findWebRecipes, lookupExercise, askCoach, readNutrition, photoToBase64, getClient } from "./ai.js";
 
 // ---------- tiny templating: interpolations are escaped unless wrapped in raw() ----------
 const RAW = Symbol("raw");
@@ -1270,7 +1271,187 @@ async function loadGospel(key) {
 
 // ---------- ME ----------
 
+// ---------- app status: connection, updates, install, storage, lock ----------
+
+const status = {
+  online: navigator.onLine, reachable: null, latest: null, lastCheck: null, checking: false,
+  sw: "serviceWorker" in navigator ? "starting" : "unsupported", persisted: null, installPrompt: null,
+};
+let swReg = null;
+
+const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const ago = (t) => { if (!t) return "never"; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
+const daysSince = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : null);
+
+async function checkForUpdates(manual = false) {
+  if (status.checking) return;
+  status.checking = true;
+  status.online = navigator.onLine;
+  try {
+    const res = await fetch(`js/version.js?check=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    status.latest = (await res.text()).match(/APP_VERSION\s*=\s*"([^"]+)"/)?.[1] || null;
+    status.reachable = true;
+  } catch {
+    status.reachable = false;
+  }
+  try { await swReg?.update(); } catch { /* offline */ }
+  status.lastCheck = Date.now();
+  status.checking = false;
+  renderBanner();
+  if (ui.tab === "me") render();
+  if (manual) toast(!status.reachable ? "Can't reach the server right now" : status.latest && status.latest !== APP_VERSION ? "Update available" : "You're up to date");
+}
+
+function renderBanner() {
+  const el = document.getElementById("app-banner");
+  if (!el) return;
+  const s = getState();
+  const backupDays = daysSince(s.settings.lastExport);
+  const hasData = Object.keys(s.workouts).length + Object.keys(s.foods).length > 3;
+  let msg = "", action = "";
+  if (status.latest && status.latest !== APP_VERSION) { msg = "A new version is ready."; action = html`<button type="button" class="btn btn-sm" data-action="reload-app">Update now</button>`; }
+  else if (!status.online) msg = "Offline. Everything you log still saves on this phone.";
+  else if (hasData && (backupDays === null || backupDays > 14)) { msg = backupDays === null ? "You haven't backed up your data yet." : `Last backup ${backupDays} days ago.`; action = html`<button type="button" class="btn btn-sm" data-action="export">Back up</button>`; }
+  el.hidden = !msg;
+  el.innerHTML = msg ? html`<span>${msg}</span>${action}`[RAW] : "";
+}
+
+function statusRow(label, value, tone = "") {
+  return html`<div class="status-row"><dt>${label}</dt><dd class="${tone ? `tone-${tone}` : ""}">${value}</dd></div>`;
+}
+
+function statusCard(s) {
+  const upToDate = !status.latest || status.latest === APP_VERSION;
+  const backupDays = daysSince(s.settings.lastExport);
+  const overall = !status.online ? ["warning", "Offline"] : status.reachable === false ? ["warning", "Can't reach server"] : !upToDate ? ["warning", "Update ready"] : ["good", "Connected"];
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>App status</h2><span class="chip chip-${overall[0]}">${overall[1]}</span></div>
+      <dl class="status-grid">
+        ${statusRow("Version", upToDate ? `${APP_VERSION} · latest` : `${APP_VERSION} · ${status.latest} available`, upToDate ? "good" : "warn")}
+        ${statusRow("Connection", !status.online ? "Offline" : status.reachable === false ? "Online, but the app server didn't answer" : status.reachable ? "Online · app server reachable" : "Checking…", status.online && status.reachable ? "good" : "warn")}
+        ${statusRow("Last update check", ago(status.lastCheck))}
+        ${statusRow("Works offline", status.sw === "active" ? "Yes" : status.sw === "unsupported" ? "Not supported on this browser" : "Setting up…", status.sw === "active" ? "good" : "warn")}
+        ${statusRow("Installed", isStandalone() ? "Yes, running as a home-screen app" : "No, running in the browser", isStandalone() ? "good" : "warn")}
+        ${statusRow("Data protection", status.persisted ? "Protected from automatic clearing" : isStandalone() ? "Home-screen app (kept by the phone)" : "Browser may clear it if unused", status.persisted || isStandalone() ? "good" : "warn")}
+        ${statusRow("Last backup", backupDays === null ? "Never" : backupDays === 0 ? "Today" : `${backupDays} day${backupDays === 1 ? "" : "s"} ago`, backupDays !== null && backupDays <= 14 ? "good" : "warn")}
+        ${statusRow("AI features", s.settings.apiKey ? "API key set" : "Off (no API key)", s.settings.apiKey ? "good" : "")}
+      </dl>
+      <div class="row">
+        <button type="button" class="btn ghost" data-action="check-updates" ${status.checking ? "disabled" : ""}>${status.checking ? "Checking…" : "Check now"}</button>
+        ${s.settings.apiKey ? html`<button type="button" class="btn ghost" data-action="test-key">Test API key</button>` : ""}
+        ${upToDate ? "" : html`<button type="button" class="btn" data-action="reload-app">Update now</button>`}
+      </div>
+      <p class="hint">The app checks for updates every time you open it. Updates install themselves; you never need to reinstall.</p>
+    </section>`;
+}
+
+function installCard() {
+  if (isStandalone()) return "";
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Add to your home screen</h2></div>
+      ${status.installPrompt ? html`<button type="button" class="btn full" data-action="install-app">Install Temple</button>` : isIOS() ? html`
+        <ol class="steps">
+          <li>Open this page in <strong>Safari</strong>. Other iPhone browsers can't install apps.</li>
+          <li>Tap the <strong>Share</strong> button (the square with an arrow).</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>, then <strong>Add</strong>.</li>
+          <li>Open Temple from your home screen from now on. It runs full-screen and works offline.</li>
+        </ol>
+        <p class="hint">Data saved in Safari and in the home-screen app are kept separately. Set up from the home-screen app, or use Back up here and Restore there.</p>` : html`
+        <ol class="steps">
+          <li>In Chrome, tap the <strong>⋮</strong> menu.</li>
+          <li>Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+        </ol>`}
+    </section>`;
+}
+
+function securityCard(s) {
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Privacy and security</h2></div>
+      <ul class="status-list">
+        <li>Your food, workouts, weight and prayers are stored only on this phone. Nothing is uploaded to GitHub or any server.</li>
+        <li>The app only loads code from itself, plus fonts, the Gospel feed and (if you add a key) Anthropic. Anything else is blocked.</li>
+        <li>Your API key is stored only on this phone and sent only to Anthropic. Set a monthly spending limit at console.anthropic.com.</li>
+      </ul>
+      <h3 class="entry-title">App lock</h3>
+      ${s.settings.pinHash ? html`
+        <p class="hint">A PIN is required each time the app opens, and after 5 minutes in the background.</p>
+        <div class="row">
+          <button type="button" class="btn ghost" data-action="lock-now">Lock now</button>
+          <button type="button" class="btn ghost" data-action="remove-pin">Remove PIN</button>
+        </div>` : html`
+        <form data-form="set-pin" class="inline">
+          <label class="grow">Set a 4–8 digit PIN<input name="pin" type="password" inputmode="numeric" pattern="[0-9]{4,8}" minlength="4" maxlength="8" autocomplete="new-password" required></label>
+          <button class="btn" type="submit">Set PIN</button>
+        </form>
+        <p class="hint">Keeps others out if your phone is unlocked. It's a privacy lock, not encryption.</p>`}
+      ${s.settings.apiKey ? html`<button type="button" class="btn ghost full" data-action="remove-key">Remove API key from this phone</button>` : ""}
+    </section>`;
+}
+
+// ---------- PIN lock ----------
+
+async function hashPin(pin, salt) {
+  const bytes = new TextEncoder().encode(`${salt}:${pin}`);
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function showLock() {
+  if (document.getElementById("lock")) return;
+  const el = document.createElement("div");
+  el.id = "lock";
+  el.className = "lock";
+  el.innerHTML = html`
+    <form class="lock-box" data-lock>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✠</span>TEMPLE</div>
+      <label>Enter your PIN<input name="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" autofocus required></label>
+      <p class="error" id="lock-msg" hidden>Wrong PIN. Try again.</p>
+      <button class="btn full" type="submit">Unlock</button>
+      <button class="link-btn" type="button" data-forgot>Forgot PIN?</button>
+    </form>`[RAW];
+  document.body.append(el);
+  el.querySelector("input").focus();
+  el.querySelector("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const st = getState().settings;
+    const ok = (await hashPin(e.target.pin.value, st.pinSalt)) === st.pinHash;
+    if (!ok) { el.querySelector("#lock-msg").hidden = false; e.target.pin.value = ""; return; }
+    try { sessionStorage.setItem("temple-unlocked", "1"); } catch { /* private mode */ }
+    el.remove();
+  });
+  el.querySelector("[data-forgot]").addEventListener("click", () => {
+    if (confirm("There's no way to recover a PIN. Erase all app data on this phone and start over? Restore from a backup afterwards if you have one.")) {
+      localStorage.clear();
+      location.reload();
+    }
+  });
+}
+
+function needsUnlock() {
+  if (!getState().settings.pinHash) return false;
+  try { return sessionStorage.getItem("temple-unlocked") !== "1"; } catch { return true; }
+}
+
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (getState().settings.pinHash && Date.now() - hiddenAt > 5 * 60000 && hiddenAt) {
+    try { sessionStorage.removeItem("temple-unlocked"); } catch { /* ignore */ }
+    showLock();
+  }
+  checkForUpdates();
+});
+
 function renderMe(s) {
+  return html`${statusCard(s)}${installCard()}${renderMeSettings(s)}${securityCard(s)}`;
+}
+
+function renderMeSettings(s) {
   const p = s.profile;
   const target = targetsFor(s);
   const o = p.overrides || {};
@@ -1680,6 +1861,15 @@ const forms = {
     update((s) => { s.profile.overrides = Object.values(o).some(Boolean) ? o : null; });
     toast("Targets saved");
   },
+  async "set-pin"(d) {
+    const pin = String(d.pin || "");
+    if (!/^\d{4,8}$/.test(pin)) return toast("Use 4 to 8 digits");
+    const salt = crypto.getRandomValues(new Uint32Array(4)).join("-");
+    const hash = await hashPin(pin, salt);
+    try { sessionStorage.setItem("temple-unlocked", "1"); } catch { /* ignore */ }
+    update((st) => { st.settings.pinSalt = salt; st.settings.pinHash = hash; });
+    toast("PIN set");
+  },
   apikey(d) { update((s) => { s.settings.apiKey = d.apiKey.trim(); }); toast("Key saved on this device"); },
 };
 
@@ -1797,7 +1987,44 @@ const actions = {
     a.href = URL.createObjectURL(blob);
     a.download = `temple-training-${dateKey()}.json`;
     a.click();
-    URL.revokeObjectURL(a.href);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    update((st) => { st.settings.lastExport = new Date().toISOString(); });
+    renderBanner();
+    toast("Backup saved. Keep it in Files or iCloud Drive");
+  },
+  "check-updates"() { checkForUpdates(true); },
+  "reload-app"() { location.reload(); },
+  async "install-app"() {
+    const prompt = status.installPrompt;
+    if (!prompt) return;
+    prompt.prompt();
+    await prompt.userChoice.catch(() => {});
+    status.installPrompt = null;
+    render();
+  },
+  async "test-key"() {
+    toast("Testing your API key…");
+    try {
+      const { client } = await getClient(getState().settings.apiKey);
+      await client.models.retrieve("claude-opus-5-5");
+      toast("API key works");
+    } catch (err) {
+      toast(err?.status === 401 ? "API key was rejected" : "Couldn't reach Anthropic");
+    }
+  },
+  "lock-now"() {
+    try { sessionStorage.removeItem("temple-unlocked"); } catch { /* ignore */ }
+    showLock();
+  },
+  "remove-pin"() {
+    if (!confirm("Remove the app PIN?")) return;
+    update((st) => { delete st.settings.pinHash; delete st.settings.pinSalt; });
+    toast("PIN removed");
+  },
+  "remove-key"() {
+    if (!confirm("Remove your Anthropic API key from this phone? AI features will turn off.")) return;
+    update((st) => { st.settings.apiKey = ""; });
+    toast("API key removed");
   },
 };
 
@@ -1885,6 +2112,27 @@ subscribe(render);
 window.addEventListener("hashchange", () => go(location.hash.slice(1)));
 render();
 
+if (needsUnlock()) showLock();
+
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("sw.js").catch(() => {});
+  navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`).then((reg) => {
+    swReg = reg;
+    const sync = () => { status.sw = reg.active ? "active" : "starting"; if (ui.tab === "me") render(); };
+    sync();
+    navigator.serviceWorker.ready.then(sync);
+  }).catch(() => { status.sw = "unsupported"; });
 }
+
+// Ask the browser to keep this app's data even when storage is tight.
+navigator.storage?.persist?.().then(async () => {
+  status.persisted = await navigator.storage.persisted();
+}).catch(() => {});
+
+window.addEventListener("online", () => { status.online = true; toast("Back online"); checkForUpdates(); });
+window.addEventListener("offline", () => { status.online = false; status.reachable = false; renderBanner(); if (ui.tab === "me") render(); });
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); status.installPrompt = e; if (ui.tab === "me") render(); });
+window.addEventListener("appinstalled", () => { status.installPrompt = null; toast("Temple installed"); });
+
+checkForUpdates();
+setInterval(() => { if (!document.hidden) checkForUpdates(); }, 30 * 60000);
+renderBanner();

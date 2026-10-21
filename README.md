@@ -90,3 +90,17 @@ python3 -m http.server 8000
 ## Your data
 
 Everything is stored in your browser's `localStorage`. Use **Me → Export** regularly to make a backup file (your API key is left out of it). Use **Import** to restore or move to another device.
+
+## Security and privacy
+
+- Your data (food, workouts, weight, prayers, API key) lives only in your phone's app storage. The repository holds the app's code, never your data.
+- A Content-Security-Policy only lets the page load code from itself, Google Fonts, the Universalis Gospel feed, the jsDelivr copy of the Anthropic SDK, and the Anthropic API. Everything else is blocked.
+- Optional PIN lock (Me → Privacy and security). It's asked for on every launch and after 5 minutes in the background. It's a privacy lock, not encryption.
+- The app asks the browser for persistent storage so your data isn't cleared automatically. Back up regularly with Me → Export; the app reminds you after 14 days.
+
+## Staying connected and updated
+
+Me → App status shows the version, connection, offline readiness, install state, storage protection and last backup. The app checks for a new version on every launch, whenever it comes back to the foreground, and every 30 minutes while open. A banner offers "Update now" when one is ready.
+
+**Releasing a change:** bump `APP_VERSION` in `js/version.js`. The service worker is registered as `sw.js?v=<version>`, so every release installs a fresh offline cache.
+
