@@ -2,6 +2,8 @@
 // (USDA FoodData Central values per 100 g, rounded), so scaling a portion is exact.
 // Diet tags are derived from ingredients, never hand-labelled.
 
+import { PREP } from "./recipe-steps.js";
+
 // name: [kcal, protein, carbs, fat, flags]   flags: m=meat f=fish d=dairy e=egg g=gluten
 const ING = {
   "chicken breast (raw)": [120, 22.5, 0, 2.6, "m"],
@@ -195,6 +197,7 @@ function flagsOf(ingredients) {
 
 export const RECIPES = RAW.map(([id, name, slot, ingredients, steps, note]) => ({
   id, name, slot, steps, note,
+  ...PREP[id], // detailed prep: times, equipment, seasonings, full steps (overrides the short steps)
   ingredients: ingredients.map(([n, g]) => ({ name: n, g })),
   per: macrosOf(ingredients),
   flags: flagsOf(ingredients),
