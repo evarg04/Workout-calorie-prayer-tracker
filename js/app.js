@@ -1,5 +1,5 @@
 import { getState, update, save, subscribe, uid, dateKey, addDays, parseKey, exportJSON, importJSON } from "./store.js";
-import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weeklyAdherence, paceVerdict, ACTIVITY_LEVELS } from "./nutrition.js";
+import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weeklyAdherence, paceVerdict, ACTIVITY_LEVELS, GOALS, RATE_OPTIONS } from "./nutrition.js";
 import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, setFeedback, exerciseVerdict, e1rm, workingWeight } from "./lifts.js";
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE, substitutesFor } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
@@ -152,7 +152,7 @@ function renderToday(s) {
     ${penanceCard(key)}
 
     <section class="card status status-${verdict.level}">
-      <div class="sec-head"><h2>Pace</h2><span class="chip chip-${verdict.level}">${STATUS[verdict.level]}</span></div>
+      <div class="sec-head"><h2>Pace</h2><button type="button" class="link-btn" data-goto="me">${GOALS[target.mode].short}</button><span class="chip chip-${verdict.level}">${STATUS[verdict.level]}</span></div>
       <ul class="status-list">${verdict.msgs.map((m) => html`<li>${m}</li>`)}</ul>
     </section>
 
@@ -1092,7 +1092,12 @@ function summarySheet(s, w, key) {
   if (weight && goal) {
     const toGo = Math.abs(weight - goal);
     if (toGo < 1) goals.push(["Weight", `You're at your ${goal} lb goal. Training now keeps the muscle you built.`]);
-    else if (trend && target.losing && -trend.perWeek > 0.1) {
+    else if (trend && target.gaining && trend.perWeek > 0.1 && goal > weight) {
+      const eta = new Date(parseKey(key).getTime() + (toGo / trend.perWeek) * 7 * 86400000);
+      goals.push(["Weight", `${toGo.toFixed(1)} lb to ${goal} lb, gaining ${trend.perWeek.toFixed(1)} lb a week. On this pace: ${eta.toLocaleDateString(undefined, { month: "long", day: "numeric" })}.`]);
+    } else if (target.mode === "maintain" || target.mode === "recomp") {
+      goals.push(["Weight", trend ? `${trend.perWeek >= 0 ? "+" : ""}${trend.perWeek.toFixed(1)} lb a week. ${target.mode === "recomp" ? "For a recomp, steady or slowly down is right" : "For maintenance, steady is the goal"}; strength is what to watch.` : "Weigh in most mornings; for this goal a steady scale is what you want."]);
+    } else if (trend && target.losing && -trend.perWeek > 0.1 && goal < weight) {
       const eta = new Date(parseKey(key).getTime() + (toGo / -trend.perWeek) * 7 * 86400000);
       goals.push(["Weight", `${toGo.toFixed(1)} lb to ${goal} lb, losing ${(-trend.perWeek).toFixed(1)} lb a week. On this pace: ${eta.toLocaleDateString(undefined, { month: "long", day: "numeric" })}.`]);
     } else goals.push(["Weight", `${toGo.toFixed(1)} lb to ${goal} lb. ${trend ? "Keep weighing in; the trend is building." : "Weigh in most mornings and your pace shows up here within a week."}`]);
@@ -1899,7 +1904,53 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function renderMe(s) {
-  return html`${statusCard(s)}${installCard()}${renderMeSettings(s)}${securityCard(s)}`;
+  return html`${goalCard(s)}${statusCard(s)}${installCard()}${renderMeSettings(s)}${securityCard(s)}`;
+}
+
+// Step-by-step: the person's own numbers through each formula.
+function mathBlock(t) {
+  const m = t.math;
+  const n = (x) => Math.round(x).toLocaleString();
+  const act = ACTIVITY_LEVELS.find(([v]) => v === +m.activity)?.[1] || "";
+  return html`
+    <details class="math"><summary>Show my math</summary>
+      <ol class="math-steps">
+        <li><span class="eyebrow">1 · Calories burned at rest (BMR)</span>
+          Mifflin–St Jeor: 10 × ${m.kg.toFixed(1)} kg + 6.25 × ${Math.round(m.cm)} cm − 5 × ${m.age} years ${m.sex === "male" ? "+ 5" : "− 161"} = <strong>${n(t.bmr)} kcal</strong>
+          <span class="sub-line">${m.w} lb is ${m.kg.toFixed(1)} kg. Uses your latest weigh-in.</span></li>
+        <li><span class="eyebrow">2 · Calories burned in a day</span>
+          ${n(t.bmr)} × ${m.activity} for "${act}" = <strong>${n(t.tdee)} kcal</strong>
+          <span class="sub-line">This is the number to check first. Most people pick an activity level that's too high; if you have a desk job and lift, "Light" is usually right.</span></li>
+        <li><span class="eyebrow">3 · Your goal: ${GOALS[t.mode].short.toLowerCase()}</span>
+          ${t.mode === "maintain" ? html`Eat at maintenance: <strong>${n(t.calories)} kcal</strong>` : html`${n(t.tdee)} ${m.adjust < 0 ? "−" : "+"} ${n(Math.abs(m.adjust))} (${t.rate} lb/week × 500) = <strong>${n(m.rawCalories)} kcal</strong>`}
+          ${m.floored ? html`<span class="sub-line">Raised to the ${m.floor} kcal minimum; eating less than that costs muscle and is hard to sustain.</span>` : ""}
+          ${t.rateCapped ? html`<span class="sub-line">Rate capped at ${t.maxRate} lb/week (1% of body weight).</span>` : ""}</li>
+        <li><span class="eyebrow">4 · Protein</span>
+          ${n(m.proteinBase)} lb (${t.proteinBasis === "goal" ? "goal" : "current"} weight) × ${m.proteinPerLb} g = <strong>${t.protein} g</strong>
+          <span class="sub-line">That's ${m.gPerKg.toFixed(1)} g per kg of your body weight.</span></li>
+        <li><span class="eyebrow">5 · Fat</span>
+          The larger of ${n(m.fatFloor)} g (0.3 g per lb) and ${n(m.fatShare)} g (25% of calories) = <strong>${t.fat} g</strong></li>
+        <li><span class="eyebrow">6 · Carbs</span>
+          What's left: (${n(m.rawCalories)} − ${t.protein} × 4 − ${t.fat} × 9) ÷ 4 = <strong>${t.carbs} g</strong></li>
+      </ol>
+      ${m.overridden ? html`<p class="small warn-text">You've set custom targets, so the numbers above the math use those instead.</p>` : ""}
+    </details>`;
+}
+
+function goalCard(s) {
+  const p = s.profile;
+  const target = targetsFor(s);
+  return html`
+    <section class="card" id="goal-card">
+      <div class="sec-head"><h2>Your goal</h2><span class="sec-meta">Pick one; you can change it any time</span></div>
+      <div class="goal-pick" role="radiogroup" aria-label="Your goal">${Object.entries(GOALS).map(([k, g]) => html`
+        <button type="button" role="radio" aria-checked="${k === target.mode}" class="goal-opt${k === target.mode ? " is-on" : ""}" data-action="set-goal" data-goal="${k}">
+          <strong>${g.label}</strong>
+        </button>`)}</div>
+      <p class="goal-expect"><span class="eyebrow">What to expect</span> ${GOALS[target.mode].expect}</p>
+      ${target.mode === "cut" && p.goalWeightLb >= (latestWeight(s.weights) || p.weightLb) ? html`<p class="small warn-text">Your goal weight isn't below your current weight. Lower it under Your details so the app can project your finish date.</p>` : ""}
+      ${target.mode === "bulk" && p.goalWeightLb <= (latestWeight(s.weights) || p.weightLb) ? html`<p class="small muted">Optional: set a goal weight above your current weight to see a projected date.</p>` : ""}
+    </section>`;
 }
 
 function renderMeSettings(s) {
@@ -1908,14 +1959,14 @@ function renderMeSettings(s) {
   const o = p.overrides || {};
   return html`
     <section class="card">
-      <h2>Your goals</h2>
+      <h2>Your details</h2>
       <form data-form="profile" class="grid-form">
         <label>Sex<select name="sex"><option value="male" ${p.sex === "male" ? "selected" : ""}>Male</option><option value="female" ${p.sex === "female" ? "selected" : ""}>Female</option></select></label>
         <label>Age<input name="age" type="number" min="14" max="100" value="${p.age}"></label>
         <label>Height (in)<input name="heightIn" type="number" min="48" max="96" step="0.5" value="${p.heightIn}"></label>
         <label>Start weight (lb)<input name="weightLb" type="number" step="0.1" value="${p.weightLb}"></label>
         <label>Goal weight (lb)<input name="goalWeightLb" type="number" step="0.1" value="${p.goalWeightLb}"></label>
-        <label>Loss rate (lb/week)<select name="rateLbPerWeek">${[0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => html`<option value="${r}" ${+p.rateLbPerWeek === r ? "selected" : ""}>${r}</option>`)}</select></label>
+        ${RATE_OPTIONS[target.mode] ? html`<label>${target.mode === "cut" ? "Loss" : "Gain"} rate (lb/week)<select name="${target.mode === "cut" ? "rateLbPerWeek" : "gainRateLbPerWeek"}">${RATE_OPTIONS[target.mode].map((r) => html`<option value="${r}" ${(target.mode === "cut" ? +p.rateLbPerWeek : target.rate) === r ? "selected" : ""}>${r}</option>`)}</select></label>` : ""}
         <label class="span2">Activity<select name="activity">${ACTIVITY_LEVELS.map(([v, l]) => html`<option value="${v}" ${+p.activity === v ? "selected" : ""}>${l}</option>`)}</select></label>
         <button class="btn span2" type="submit">Save goals</button>
       </form>
@@ -1941,7 +1992,15 @@ function renderMeSettings(s) {
         <tr><td>Fat</td><td>${target.fat} g</td></tr>
       </table>
       ${target.rateCapped ? html`<p class="small warn-text">Rate capped at ${target.maxRate} lb/week (~1% of bodyweight) so you keep your muscle.</p>` : ""}
-      <p class="small muted">How it's built: Mifflin–St Jeor BMR × activity, minus ~500 kcal per lb/week of loss. Protein is 1 g per lb of goal weight — the single biggest lever for keeping muscle while you cut. Fat has a floor for hormones; carbs fill the rest to fuel your lifts. Recalculates as your weigh-ins change.</p>
+      ${target.canChooseBasis ? html`
+        <p class="field-label">Base protein on</p>
+        <div class="seg-tabs">
+          <button type="button" class="${target.proteinBasis === "goal" ? "is-on" : ""}" data-action="protein-basis" data-basis="goal">Goal weight · ${target.proteinIf.goal} g</button>
+          <button type="button" class="${target.proteinBasis === "current" ? "is-on" : ""}" data-action="protein-basis" data-basis="current">Current weight · ${target.proteinIf.current} g</button>
+        </div>
+        <p class="small muted">Both are inside the 1.6–2.2 g per kg that research shows protects muscle while dieting. Current weight is a little more, and helps keep you full.</p>` : ""}
+      ${mathBlock(target)}
+      <p class="small muted">How it's built for <strong>${GOALS[target.mode].short.toLowerCase()}</strong>: Mifflin–St Jeor BMR × activity${target.mode === "maintain" ? ", eaten at maintenance" : `, ${target.losing ? "minus" : "plus"} ~${Math.round(target.rate * 500)} kcal a day (${target.rate} lb/week)`}. ${target.losing ? "Protein is 1 g per lb of goal weight, the single biggest lever for keeping muscle while eating below maintenance." : "Protein is 0.8 g per lb of body weight (about 1.8 g/kg), enough to build muscle."} Fat has a floor for hormones; carbs fill the rest to fuel your lifts. Recalculates as your weigh-ins change.</p>
       <details><summary>Set custom targets</summary>
         <form data-form="overrides" class="grid-form">
           <label>Calories<input name="calories" type="number" value="${o.calories || ""}" placeholder="${target.calories}"></label>
@@ -2362,8 +2421,10 @@ const forms = {
     update((s) => {
       Object.assign(s.profile, {
         sex: d.sex, age: +d.age, heightIn: +d.heightIn, weightLb: +d.weightLb,
-        goalWeightLb: +d.goalWeightLb, rateLbPerWeek: +d.rateLbPerWeek, activity: +d.activity,
+        goalWeightLb: +d.goalWeightLb, activity: +d.activity,
       });
+      if (d.rateLbPerWeek) s.profile.rateLbPerWeek = +d.rateLbPerWeek;
+      if (d.gainRateLbPerWeek) s.profile.gainRateLbPerWeek = +d.gainRateLbPerWeek;
     });
     toast("Goals saved");
   },
@@ -2457,6 +2518,16 @@ const actions = {
     render();
   },
   rest(el) { startRest(+el.dataset.sec); },
+  "protein-basis"(el) {
+    update((st) => { st.profile.proteinBasis = el.dataset.basis; });
+    toast(`Protein: ${targetsFor(getState()).protein} g a day`);
+  },
+  "set-goal"(el) {
+    const goal = el.dataset.goal;
+    update((st) => { st.profile.goal = goal; });
+    const t = targetsFor(getState());
+    toast(`${GOALS[goal].short}: ${t.calories.toLocaleString()} kcal, ${t.protein} g protein a day`);
+  },
   "finish-open"() { showFinisherSheet(); },
   "finish-close"() { closeFinisherSheet(); },
   "wrap-up"() { update((st) => { ensureWorkout(st, ui.date).wrapped = true; }); showSummary(); },

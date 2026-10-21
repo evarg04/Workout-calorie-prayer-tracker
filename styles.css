@@ -571,6 +571,22 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .sub-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .swaps { margin-top: 8px; }
 
+/* ---------- goal picker ---------- */
+.goal-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 12px; }
+.goal-opt { text-align: left; padding: 12px; min-height: 58px; cursor: pointer; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.goal-opt strong { font: 700 15px/1.2 var(--f-num); letter-spacing: 0.04em; text-transform: uppercase; }
+.goal-opt.is-on { border: 2px solid var(--accent); background: var(--surface); padding: 11px; box-shadow: inset 4px 0 0 var(--accent); }
+.goal-expect { margin: 0; font-size: 15px; line-height: 1.45; }
+.goal-expect .eyebrow { display: block; margin-bottom: 3px; }
+.status .sec-head .link-btn { margin-left: auto; margin-right: 8px; }
+
+.math summary { font-weight: 700; }
+.math-steps { margin: 8px 0 0; padding: 0; list-style: none; }
+.math-steps li { padding: 9px 0; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.45; }
+.math-steps li:first-child { border-top: 0; }
+.math-steps .eyebrow { display: block; margin-bottom: 2px; }
+.math-steps .sub-line { display: block; margin-top: 3px; }
+
 /* ---------- finisher sheet & extras ---------- */
 .sheet-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); z-index: 30; }
 .sheet {

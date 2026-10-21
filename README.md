@@ -6,6 +6,15 @@ A phone-friendly app for losing fat **while keeping and building muscle**, plus 
 
 ## What it does
 
+### 🎯 Pick your goal
+Me → Your goal offers four choices. Each sets your calories and protein and explains what to expect:
+- **Lose fat, keep muscle:** a deficit at your chosen rate (capped at ~1% of body weight a week), with 1 g of protein per lb.
+- **Recomp: lose fat, build muscle:** about 250 kcal under maintenance with high protein. Best for newer or returning lifters.
+- **Build muscle (lean bulk):** a small surplus for 0.25–0.5 lb a week, with 0.8 g of protein per lb.
+- **Maintain:** eat at maintenance.
+
+The Pace check judges your weight trend by the goal you picked. **Show my math** (under Your daily targets) walks your own numbers through every formula. When you're eating below maintenance, you can base protein on your goal weight or your current weight.
+
 ### 🍽️ Food: calories and macros
 - Works out your targets from your stats: Mifflin–St Jeor BMR × activity, minus ~500 kcal for each lb/week you want to lose. The loss rate is capped at ~1% of bodyweight per week, because cutting faster than that costs muscle.
 - **Protein is 1 g per lb of goal weight.** That's the biggest lever for keeping muscle in a deficit. Fat has a minimum; carbs fill the rest to fuel your lifts.
