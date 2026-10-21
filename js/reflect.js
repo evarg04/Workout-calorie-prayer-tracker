@@ -1,7 +1,6 @@
-// Optional AI-written Catholic reflection on the day's Gospel, using the user's own
-// Anthropic API key (stored only on this device). The SDK is loaded on demand.
+// Optional AI-written Catholic reflection on the day's Gospel (see ai.js for the client).
 
-const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm";
+import { ask } from "./ai.js";
 
 const SYSTEM = `You are a faithful Catholic spiritual writer helping a lay Catholic pray with the day's Gospel.
 Write in the tradition of the Church: faithful to Scripture, Sacred Tradition and the Magisterium. Draw on the Catechism of the Catholic Church (cite paragraph numbers only when you are confident of them), the Church Fathers, Doctors of the Church and the saints. Never invent quotations; if unsure of exact wording, paraphrase and say so.
@@ -19,49 +18,12 @@ One specific, doable resolution, one sentence.
 ## A short prayer
 Three to four lines.`;
 
-let cached = { key: null, promise: null };
-
-function getClient(apiKey) {
-  if (cached.key !== apiKey) {
-    cached = {
-      key: apiKey,
-      promise: import(SDK_URL).then(({ default: Anthropic }) => ({
-        Anthropic,
-        client: new Anthropic({ apiKey, dangerouslyAllowBrowser: true }),
-      })),
-    };
-  }
-  return cached.promise;
-}
-
 export async function generateReflection({ apiKey, date, liturgicalDay, gospelRef, gospelText }) {
-  if (!apiKey) throw new Error("Add your Anthropic API key on the Me tab first.");
-  const { Anthropic, client } = await getClient(apiKey);
-
-  try {
-    const response = await client.beta.messages.create({
-      model: "claude-opus-5-5",
-      max_tokens: 16000,
-      output_config: { effort: "medium" },
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      system: SYSTEM,
-      messages: [{
-        role: "user",
-        content: `Date: ${date}\nLiturgical day: ${liturgicalDay}\nGospel: ${gospelRef}\n\n${gospelText}`,
-      }],
-    });
-    if (response.stop_reason === "refusal") throw new Error("The model declined to write a reflection for this text.");
-    const text = response.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-    if (!text) throw new Error("Empty reflection returned — try again.");
-    return text;
-  } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) throw new Error("Your API key was rejected. Check it on the Me tab.");
-    if (err instanceof Anthropic.RateLimitError) throw new Error("Rate limited — wait a minute and try again.");
-    if (err instanceof Anthropic.APIConnectionError) throw new Error("Couldn't reach the API. Check your connection.");
-    if (err instanceof Anthropic.APIError) throw new Error(`API error ${err.status}: ${err.message}`);
-    throw err;
-  }
+  return ask({
+    apiKey,
+    system: SYSTEM,
+    content: `Date: ${date}\nLiturgical day: ${liturgicalDay}\nGospel: ${gospelRef}\n\n${gospelText}`,
+  });
 }
 
 // Tiny Markdown renderer for the reflection: escapes first, then headings/bold/italic/lists.

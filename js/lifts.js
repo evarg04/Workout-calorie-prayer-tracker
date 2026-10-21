@@ -9,11 +9,18 @@ export const e1rm = (weight, reps) => (reps <= 1 ? weight : weight * (1 + reps /
 const roundTo = (x, step) => Math.round(x / step) * step;
 
 // Sessions for one exercise, newest first: [{ date, sets: [{weight,reps}] }]
-export function history(workouts, exId) {
-  return Object.entries(workouts)
+// `rx` ("8-12") limits it to sessions done in that rep range, so a 5×5 day and an
+// 8–12 day on the same lift each progress on their own.
+export function history(workouts, exId, rx) {
+  const all = Object.entries(workouts)
     .map(([date, w]) => ({ date, sets: (w.sets || []).filter((s) => s.exId === exId && s.reps > 0) }))
     .filter((s) => s.sets.length)
     .sort((a, b) => (a.date < b.date ? 1 : -1));
+  if (!rx) return all;
+  const matching = all
+    .map((h) => ({ ...h, sets: h.sets.filter((s) => s.rx === rx) }))
+    .filter((h) => h.sets.length);
+  return matching.length ? matching : all.filter((h) => h.sets.every((s) => !s.rx));
 }
 
 export function bestE1rm(sets) {
@@ -26,14 +33,16 @@ function workingSets(sets) {
   return { top, sets: sets.filter((s) => +s.weight === top) };
 }
 
-export function suggestNext(ex, workouts, beforeDate = dateKey()) {
-  const past = history(workouts, ex.id).filter((h) => h.date < beforeDate);
+export function suggestNext(ex, workouts, beforeDate = dateKey(), rx) {
+  const past = history(workouts, ex.id, rx).filter((h) => h.date < beforeDate);
   if (!past.length) {
-    return { weight: null, reps: ex.repMin, sets: 3, note: `First time: pick a weight you could do for ${ex.repMax + 2} reps. Do 3 sets of ${ex.repMin}–${ex.repMax}.` };
+    const n = ex.sets || 3;
+    const range = ex.repMin === ex.repMax ? `${ex.repMin}` : `${ex.repMin}–${ex.repMax}`;
+    return { weight: null, reps: ex.repMin, sets: n, note: `First time: pick a weight you could do for ${ex.repMax + 2} reps, then ${n} × ${range}.` };
   }
   const last = workingSets(past[0].sets);
   const reps = last.sets.map((s) => +s.reps);
-  const setCount = Math.max(3, last.sets.length);
+  const setCount = ex.sets || Math.max(3, last.sets.length);
 
   if (reps.every((r) => r >= ex.repMax)) {
     const w = last.top + ex.increment;
@@ -48,7 +57,7 @@ export function suggestNext(ex, workouts, beforeDate = dateKey()) {
     return { weight: w, reps: ex.repMax, sets: setCount, note: `Stalled twice at ${last.top} lb. Deload to ${w} lb, build back up — this is how you break plateaus.`, kind: "deload" };
   }
 
-  const goal = reps.map((r) => Math.min(ex.repMax, r + 1));
+  const goal = Array.from({ length: setCount }, (_, i) => Math.min(ex.repMax, Math.max(ex.repMin, (reps[i] ?? reps[reps.length - 1]) + 1)));
   return { weight: last.top, reps: goal[0], repsPerSet: goal, sets: setCount, note: `Last: ${last.top} lb × ${reps.join(", ")}. Today: beat it — ${last.top} lb × ${goal.join(", ")}.`, kind: "reps" };
 }
 

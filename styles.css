@@ -272,3 +272,43 @@ ol.prayer { padding-left: 22px; }
   position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translateX(-50%);
   background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 999px; font-size: 14px; z-index: 10;
 }
+
+/* ---- Menu planner ---- */
+.menu-item { border-top: 1px solid var(--border); padding: 12px 0; }
+.menu-item:first-of-type { border-top: 0; }
+.menu-head { display: flex; justify-content: space-between; align-items: center; }
+.slot-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.menu-name { font-weight: 700; font-size: 16px; margin: 2px 0; }
+.menu-total { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+.note { color: var(--gold); margin-top: 2px; }
+.ingredients, .steps { font-size: 14px; padding-left: 20px; margin: 6px 0; }
+.ingredients li, .steps li { margin: 3px 0; }
+.week-plan, .grocery { list-style: none; padding: 0; font-size: 14px; }
+.week-plan li { padding: 4px 0; border-top: 1px solid var(--border); }
+.grocery label.check { margin: 4px 0; font-size: 14px; }
+.btn-sm { min-height: 34px; padding: 7px 12px; font-size: 14px; }
+.btn.full { width: 100%; margin-top: 10px; }
+.tag.ok { background: var(--good-bg); color: var(--good); }
+
+/* ---- Programs ---- */
+.program-option { border-top: 1px solid var(--border); padding: 12px 0; }
+.program-option:first-child { border-top: 0; }
+.program .season-name { color: var(--accent); }
+.set-progress { font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.plan-table tr.done td { color: var(--good); text-decoration: line-through; }
+
+.volume { list-style: none; padding: 0; margin: 0; }
+.volume li { display: grid; grid-template-columns: 88px 1fr 64px; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
+.vol-bar { position: relative; height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
+.vol-zone { position: absolute; left: 40%; width: 40%; top: 0; bottom: 0; background: var(--good-bg); border-left: 1px dashed var(--good); border-right: 1px dashed var(--good); }
+.vol-fill { position: absolute; left: 0; top: 2px; bottom: 2px; border-radius: 4px; background: var(--series-1); }
+.vol-low { background: var(--warning); }
+.vol-high { background: var(--serious); }
+.vol-n { font-variant-numeric: tabular-nums; color: var(--text-2); }
+
+.rest-timer {
+  position: fixed; left: 16px; right: 16px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 9;
+  max-width: 608px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  background: var(--text); color: var(--bg); border-radius: 14px; padding: 10px 14px;
+  font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: var(--shadow);
+}

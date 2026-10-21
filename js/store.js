@@ -25,6 +25,7 @@ function defaults() {
     profile: {
       sex: "male", age: 30, heightIn: 70, weightLb: 200, goalWeightLb: 180,
       activity: 1.55, rateLbPerWeek: 1, overrides: null,
+      diet: "everything", meatlessFridays: false,
     },
     foods: {},        // { "YYYY-MM-DD": [{ id, name, cal, p, c, f, meal, meat }] }
     savedFoods: [],   // [{ name, cal, p, c, f }]
@@ -32,6 +33,9 @@ function defaults() {
     exercises: DEFAULT_EXERCISES,
     workouts: {},     // { "YYYY-MM-DD": { intention, offered, sets: [{ id, exId, weight, reps }] } }
     faith: {},        // { "YYYY-MM-DD": { checks: {}, lectio: {}, examen: {}, reflection, gospel } }
+    plans: {},        // { "YYYY-MM-DD": { items: [{ slot, recipeId, mult, logged }], diet, meatless, targetCal, seedN } }
+    webRecipes: [],   // recipes found on the web: { id, name, slot, per, flags, source, ingredients, steps }
+    program: null,    // { id, start, tm: { liftName: trainingMax } }
     settings: { apiKey: "" },
   };
 }
@@ -57,12 +61,17 @@ export function getState() {
 
 export function update(fn) {
   fn(state);
+  save();
+  listeners.forEach((l) => l(state));
+}
+
+// Persist without re-rendering (for derived data cached during a render).
+export function save() {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
   } catch (err) {
     console.error("Could not save", err);
   }
-  listeners.forEach((l) => l(state));
 }
 
 export function subscribe(fn) {

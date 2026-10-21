@@ -1,9 +1,13 @@
-import { getState, update, subscribe, uid, dateKey, addDays, parseKey, exportJSON, importJSON } from "./store.js";
+import { getState, update, save, subscribe, uid, dateKey, addDays, parseKey, exportJSON, importJSON } from "./store.js";
 import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weeklyAdherence, paceVerdict, ACTIVITY_LEVELS } from "./nutrition.js";
 import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary } from "./lifts.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, fetchGospel, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
+import { DIETS } from "./recipes.js";
+import { SLOTS, buildPlan, swapSlot, hydrate, planTotals, recipePool, scaled, groceryList } from "./mealplan.js";
+import { PROGRAMS, CATALOG, MUSCLES, todaysSession, weeklyVolume, round5 } from "./programs.js";
+import { findWebRecipes } from "./ai.js";
 
 // ---------- tiny templating: interpolations are escaped unless wrapped in raw() ----------
 const RAW = Symbol("raw");
@@ -133,6 +137,7 @@ function renderToday(s) {
 
     <section class="card">
       <h2>Train</h2>
+      ${s.program && PROGRAMS[s.program.id] ? html`<p class="small muted">${PROGRAMS[s.program.id].name} · today: <strong>${w?.plan?.dayName || todaysSession(s.program, s.workouts, key, tmFor(s)).dayName}</strong></p>` : ""}
       ${setCount
         ? html`<p>${setCount} set${setCount === 1 ? "" : "s"} logged${w.intention ? html` · offered for <em>${w.intention}</em>` : ""}.</p>`
         : html`<p class="muted">No workout logged today.</p>`}
@@ -166,6 +171,124 @@ function drawWeightChart(s) {
 // ---------- FOOD ----------
 
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Snacks"];
+const SLOT_SHARE = { breakfast: 0.25, lunch: 0.3, dinner: 0.3, snack: 0.1, dessert: 0.08 };
+const fmtGrams = (g) => (g >= 28 ? `${round(g)} g (${(g / 28.35).toFixed(1)} oz)` : `${round(g)} g`);
+
+function isMeatless(s, key) {
+  const lit = liturgicalDay(key);
+  return lit.abstinence || (lit.friday && !!s.profile.meatlessFridays);
+}
+
+// A day's menu is generated once and cached, then rebuilt only if diet, abstinence or targets
+// change. Meals already logged stay put; only the rest of the day is re-planned.
+function buildDayPlan(s, key, seedN, previous) {
+  const target = targetsFor(s);
+  const diet = s.profile.diet || "everything";
+  const meatless = isMeatless(s, key);
+  const plan = buildPlan({ target, diet, meatless, seed: `${key}:${seedN}`, webRecipes: s.webRecipes });
+  for (const old of previous?.items || []) {
+    if (!old.logged) continue;
+    const i = plan.items.findIndex((x) => x.slot === old.slot);
+    if (i >= 0) plan.items[i] = { ...old };
+    else plan.items.push({ ...old });
+  }
+  s.plans[key] = { ...plan, diet, meatless, targetCal: target.calories, seedN };
+  return s.plans[key];
+}
+
+function ensurePlan(s, key) {
+  const target = targetsFor(s);
+  const cached = s.plans[key];
+  const fresh = cached?.items && cached.diet === (s.profile.diet || "everything") && cached.meatless === isMeatless(s, key);
+  if (fresh && (Math.abs(cached.targetCal - target.calories) < 60 || cached.items.some((i) => i.logged))) return cached;
+  const plan = buildDayPlan(s, key, cached?.seedN || 0, cached);
+  save();
+  return plan;
+}
+
+function menuItem({ slot, recipe, mult, logged }, idx) {
+  const label = SLOTS.find((x) => x.id === slot).label;
+  const m = scaled(recipe, mult);
+  return html`
+    <div class="menu-item">
+      <div class="menu-head"><span class="slot-label">${label}</span>${logged ? html`<span class="tag ok">✓ Logged</span>` : ""}</div>
+      <div class="menu-name">${recipe.name} <span class="small muted">× ${mult} serving${mult === 1 ? "" : "s"}</span></div>
+      <div class="small muted">${round(m.cal)} kcal · ${round(m.p)}P ${round(m.c)}C ${round(m.f)}F</div>
+      ${recipe.note ? html`<div class="tiny note">✨ ${recipe.note}</div>` : ""}
+      ${recipe.source ? html`<div class="tiny"><a href="${recipe.source.url}" target="_blank" rel="noopener">${recipe.source.name} ↗</a>${recipe.estimated ? " · macros estimated" : ""}</div>` : ""}
+      <details><summary>Recipe</summary>
+        <ul class="ingredients">${(recipe.ingredients || []).map((ing) => (typeof ing === "string" ? html`<li>${ing}</li>` : html`<li>${fmtGrams(ing.g * mult)} ${ing.name}</li>`))}</ul>
+        ${recipe.source && mult !== 1 ? html`<p class="tiny muted">Quantities are for 1 serving; make ${mult}.</p>` : ""}
+        <ol class="steps">${(recipe.steps || []).map((x) => html`<li>${x}</li>`)}</ol>
+      </details>
+      <div class="row">
+        <button type="button" class="btn ghost btn-sm" data-action="swap-meal" data-slot="${slot}">↻ Swap</button>
+        <button type="button" class="btn btn-sm" data-action="log-meal" data-idx="${idx}" ${logged ? "disabled" : ""}>${logged ? "Logged" : "Log it"}</button>
+      </div>
+    </div>`;
+}
+
+function menuCard(s, key) {
+  const target = targetsFor(s);
+  const plan = ensurePlan(s, key);
+  const items = hydrate(plan, recipePool(s.webRecipes));
+  const t = planTotals(items);
+  const lit = liturgicalDay(key);
+  return html`
+    <section class="card">
+      <h2>🍽️ Today's menu</h2>
+      <p class="small muted">${DIETS[plan.diet]?.label || "Everything"}${plan.meatless ? " · meatless today 🐟" : ""} · portions scaled to your targets</p>
+      ${lit.fastDay ? html`<p class="small warn-text">Fast day: one full meal and two small ones that don't add up to a full meal. Use this menu as a guide, not a target.</p>` : ""}
+      ${items.map((i, idx) => menuItem(i, idx))}
+      <p class="menu-total">Menu: <strong>${round(t.cal)}</strong> / ${target.calories} kcal · <strong>${round(t.p)}</strong> / ${target.protein} g protein · ${round(t.c)} g carbs · ${round(t.f)} g fat</p>
+      <div class="row">
+        <button type="button" class="btn ghost" data-action="new-menu">New menu</button>
+        <button type="button" class="btn" data-action="log-menu">Log whole menu</button>
+      </div>
+      ${ui.grocery ? groceryBlock(s, key) : html`<button type="button" class="btn ghost full" data-action="grocery">🛒 Plan 7 days + grocery list</button>`}
+    </section>`;
+}
+
+function groceryBlock(s, key) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(key, i));
+  const plans = days.map((k) => ensurePlan(s, k));
+  const pool = recipePool(s.webRecipes);
+  const list = groceryList(plans, pool);
+  return html`
+    <h3>Next 7 days</h3>
+    <ul class="week-plan">${days.map((k, i) => html`<li><strong>${fmtDate(k)}</strong>: ${hydrate(plans[i], pool).map((x) => x.recipe.name).join(" · ")}</li>`)}</ul>
+    <h3>🛒 Grocery list</h3>
+    <ul class="grocery">${list.items.map((x) => html`<li><label class="check"><input type="checkbox"> ${fmtGrams(x.g)} ${x.name}</label></li>`)}</ul>
+    ${list.extras.length ? html`<p class="small muted">Plus, for web recipes:</p><ul class="small">${list.extras.map((x) => html`<li>${x}</li>`)}</ul>` : ""}
+    <button type="button" class="btn ghost" data-action="grocery">Hide</button>`;
+}
+
+function webRecipesCard(s) {
+  return html`
+    <section class="card">
+      <h2>🔎 Find recipes on TikTok & the web</h2>
+      ${s.settings.apiKey ? html`
+        <p class="small muted">Searches TikTok creators and recipe sites for meals that fit your macros. Saved recipes join your menu rotation, with a link to the source.</p>
+        <form data-form="web-recipes" class="grid-form">
+          <label>Meal<select name="slot">${SLOTS.map((x) => html`<option value="${x.id}">${x.label}</option>`)}</select></label>
+          <label>Diet<select name="diet">${Object.entries(DIETS).map(([k, v]) => html`<option value="${k}" ${k === (s.profile.diet || "everything") ? "selected" : ""}>${v.label}</option>`)}</select></label>
+          <label class="span2">Anything specific?<input name="extra" placeholder="e.g. Tex-Mex, air fryer, 15 minutes, budget"></label>
+          <button class="btn span2" type="submit" ${ui.busy.web ? "disabled" : ""}>${ui.busy.web ? "Searching the web…" : "Search"}</button>
+        </form>`
+      : html`<p class="small muted">Add your Anthropic API key on the Me tab to search TikTok creators and recipe sites for meals that fit your macros. Recipes you save join your menu rotation, with a link to the source.</p>`}
+      ${ui.busy.webError ? html`<p class="error">${ui.busy.webError}</p>` : ""}
+      ${(ui.webResults || []).map((r, i) => html`
+        <div class="menu-item">
+          <div class="menu-name">${r.name}</div>
+          <div class="small muted">${round(r.per.cal)} kcal · ${round(r.per.p)}P ${round(r.per.c)}C ${round(r.per.f)}F per serving${r.estimated ? " (estimated)" : ""}</div>
+          <div class="tiny"><a href="${r.source.url}" target="_blank" rel="noopener">${r.source.name} ↗</a></div>
+          ${r.saved ? html`<p class="small">✓ Added to your rotation</p>` : html`<button type="button" class="btn btn-sm" data-action="save-web" data-i="${i}">Add to my menu rotation</button>`}
+        </div>`)}
+      ${s.webRecipes.length ? html`<details><summary>My saved web recipes (${s.webRecipes.length})</summary>
+        <ul class="entries">${s.webRecipes.map((r) => html`<li><span>${r.name} <span class="small muted">${r.slot}</span></span><button type="button" class="icon-btn" data-action="del-web" data-id="${r.id}" aria-label="Remove ${r.name}">✕</button></li>`)}</ul>
+      </details>` : ""}
+    </section>`;
+}
 
 function renderFood(s) {
   const key = ui.date;
@@ -178,6 +301,7 @@ function renderFood(s) {
   return html`
     <section class="card">${macroBlock(t, target)}</section>
     ${penanceCard(key)}
+    ${menuCard(s, key)}
 
     <section class="card">
       <h2>Add food</h2>
@@ -198,6 +322,8 @@ function renderFood(s) {
       </form>
       <p class="small muted">Leave calories blank to compute from macros (4/4/9 kcal per g).</p>
     </section>
+
+    ${webRecipesCard(s)}
 
     ${MEALS.map((meal) => {
       const list = entries.filter((e) => e.meal === meal);
@@ -238,6 +364,80 @@ function workoutFor(s, key) {
   return s.workouts[key] || { intention: "", offered: false, order: [], sets: [] };
 }
 
+const TM_LIFTS = ["Overhead Press", "Deadlift", "Bench Press", "Back Squat"];
+const cap = (x) => x[0].toUpperCase() + x.slice(1);
+const fmtRest = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} min` : `${sec} s`);
+const tmFor = (s) => (name) => s.program?.tm?.[name] || 0;
+
+function est1rm(s, name) {
+  const ex = s.exercises.find((e) => e.name === name);
+  const h = ex ? sessionsFor(s.workouts, ex.id) : [];
+  return h.length ? round5(Math.max(...h.map((x) => bestE1rm(x.sets)))) : null;
+}
+
+function programList(s) {
+  return html`
+    ${Object.entries(PROGRAMS).map(([id, p]) => html`
+      <div class="program-option">
+        <div class="menu-name">${p.name}</div>
+        <div class="small muted">${p.author} · ${p.days} days/week · ${p.level}</div>
+        <p class="small">${p.bestFor}</p>
+        ${id === "bbb531" ? html`
+          <form data-form="start-program" data-id="${id}" class="grid-form">
+            ${TM_LIFTS.map((n) => html`<label>${n} 1RM (lb)<input name="${n}" type="number" inputmode="numeric" min="0" step="5" value="${est1rm(s, n) || ""}" required></label>`)}
+            <button class="btn span2" type="submit">${s.program?.id === id ? "Restart" : "Start"} 5/3/1</button>
+          </form>
+          <p class="tiny muted">Use a recent true max, or the estimate from your logs. Training Max is set to 90% of it.</p>`
+        : html`<form data-form="start-program" data-id="${id}"><button class="btn ghost" type="submit">${s.program?.id === id ? "Restart" : "Start"} this program</button></form>`}
+      </div>`)}
+    ${s.program ? html`<button type="button" class="btn ghost" data-action="stop-program">Stop program (train freestyle)</button>` : ""}`;
+}
+
+function programCard(s, key, w) {
+  const prog = s.program && PROGRAMS[s.program.id];
+  if (!prog) {
+    return html`
+      <section class="card">
+        <h2>📋 Choose a proven program</h2>
+        <p class="small muted">Each one has a long track record. The app runs the progression, schedules deloads, and tracks weekly volume so you keep progressing.</p>
+        ${programList(s)}
+      </section>`;
+  }
+  const loaded = w.plan?.programId === s.program.id;
+  const shown = loaded ? w.plan : todaysSession(s.program, s.workouts, key, tmFor(s));
+  return html`
+    <section class="card program">
+      <h2>📋 ${prog.name}</h2>
+      <p class="small muted">${prog.author} · ${prog.schedule}</p>
+      <div class="small">Today · week ${shown.week}</div>
+      <div class="season-name">${shown.dayName}</div>
+      ${shown.deload ? html`<p class="suggest suggest-deload">↘️ Deload week. Half the sets, same weights, easy effort. This is how you avoid stalling: you recover, then come back stronger.</p>` : ""}
+      ${loaded ? html`<p class="small">✅ Loaded below. Hit the target on every exercise.</p>`
+        : html`<button type="button" class="btn" data-action="load-session">Load today's workout</button>`}
+      <details><summary>About this program</summary>
+        <p class="small">${prog.about}</p>
+        <p class="small"><strong>Best for:</strong> ${prog.bestFor}</p>
+        <ol class="small">${prog.plan.map((d) => html`<li><strong>${d.name}:</strong> ${d.ex.map((e) => (e[1] === "531" ? `${e[0]} 5/3/1 + 5×10` : `${e[0]} ${e[1]}×${e[2] === e[3] ? e[2] : `${e[2]}–${e[3]}`}`)).join(", ")}</li>`)}</ol>
+      </details>
+      <details><summary>Switch program</summary>${programList(s)}</details>
+    </section>`;
+}
+
+function volumeCard(s, key) {
+  const v = weeklyVolume(s.workouts, s.exercises, key);
+  const label = { none: "", low: "· low", good: "✓", high: "· high" };
+  return html`
+    <section class="card">
+      <h2>📊 Weekly volume</h2>
+      <p class="small muted">Hard sets per muscle in the last 7 days. The research sweet spot is 10–20 sets per muscle per week (shaded band). Under 10 leaves growth on the table. Over 20 during a cut can outrun your recovery.</p>
+      <ul class="volume">${MUSCLES.map((m) => {
+        const n = v[m];
+        const status = n === 0 ? "none" : n < 10 ? "low" : n <= 20 ? "good" : "high";
+        return html`<li><span class="vol-name">${cap(m)}</span><span class="vol-bar"><span class="vol-zone"></span><span class="vol-fill vol-${status}" style="width:${Math.min(100, (n / 25) * 100).toFixed(1)}%"></span></span><span class="vol-n">${n} ${label[status]}</span></li>`;
+      })}</ul>
+    </section>`;
+}
+
 function renderTrain(s) {
   const key = ui.date;
   const w = workoutFor(s, key);
@@ -246,6 +446,8 @@ function renderTrain(s) {
   ui.chartEx ??= order[0] || s.exercises[0]?.id;
 
   return html`
+    ${programCard(s, key, w)}
+
     <section class="card offer">
       <h2>🙏 Offer it up</h2>
       <p class="small">"I pommel my body and subdue it" — 1 Cor 9:27. Before you lift, name who this workout is for. Offer your hardest set for them.</p>
@@ -283,31 +485,53 @@ function renderTrain(s) {
         <form data-form="new-ex" class="grid-form">
           <label class="span2">Name<input name="name" required placeholder="Hack squat"></label>
           <label>Type<select name="kind"><option value="upper">Upper body</option><option value="lower">Lower body</option></select></label>
+          <label class="span2">Main muscle<select name="muscle">${MUSCLES.map((m) => html`<option value="${m}">${cap(m)}</option>`)}</select></label>
           <label>Increment lb<input name="increment" type="number" step="0.5" min="0.5" value="5"></label>
           <label>Min reps<input name="repMin" type="number" min="1" value="6"></label>
           <label>Max reps<input name="repMax" type="number" min="1" value="10"></label>
           <button class="btn span2" type="submit">Add to library</button>
         </form>
       </details>
-    </section>`;
+    </section>
+
+    ${volumeCard(s, key)}`;
 }
 
 function exerciseCard(s, ex, w, key) {
   const sets = w.sets.filter((x) => x.exId === ex.id);
-  const sug = suggestNext(ex, s.workouts, key);
-  const nextReps = sug.repsPerSet?.[sets.length] ?? sug.reps;
-  const lastWeight = sets.length ? sets[sets.length - 1].weight : sug.weight;
+  const rxItem = w.plan?.items?.find((i) => i.exId === ex.id);
+  const rx = rxItem ? (rxItem.detail ? "531" : `${rxItem.repMin}-${rxItem.repMax}`) : "";
+  let sug, nextWeight, nextReps;
+  if (rxItem?.detail) {
+    const d = rxItem.detail[Math.min(sets.length, rxItem.detail.length - 1)];
+    sug = { note: rxItem.note, kind: w.plan.deload ? "deload" : "new" };
+    nextWeight = d.weight;
+    nextReps = d.reps;
+  } else {
+    const exRx = rxItem ? { ...ex, repMin: rxItem.repMin, repMax: rxItem.repMax, sets: rxItem.sets } : ex;
+    sug = suggestNext(exRx, s.workouts, key, rx || undefined);
+    nextReps = sug.repsPerSet?.[sets.length] ?? sug.reps;
+    nextWeight = sets.length ? sets[sets.length - 1].weight : sug.weight;
+  }
+  const range = rxItem ? (rxItem.repMin === rxItem.repMax ? `${rxItem.repMin}` : `${rxItem.repMin}–${rxItem.repMax}`) : "";
+  const target = rxItem ? (rxItem.detail ? `${rxItem.sets} sets` : `${rxItem.sets} × ${range}`) : `${ex.repMin}–${ex.repMax} reps`;
+  const rest = rxItem?.rest;
   return html`
     <section class="card">
-      <h3>${ex.name} <span class="small muted">${ex.repMin}–${ex.repMax} reps</span></h3>
+      <h3>${ex.name} <span class="small muted">${target}${rest ? ` · rest ${fmtRest(rest)}` : ""}</span></h3>
+      ${rxItem ? html`<div class="set-progress">${Math.min(sets.length, rxItem.sets)}/${rxItem.sets} sets${sets.length >= rxItem.sets ? " ✅" : ""}</div>` : ""}
       <p class="suggest suggest-${sug.kind || "new"}">${sug.kind === "up" ? "⬆️ " : sug.kind === "deload" ? "↘️ " : "🎯 "}${sug.note}</p>
+      ${rxItem?.note && !rxItem.detail ? html`<p class="small muted">${rxItem.note}</p>` : ""}
+      ${rxItem?.detail ? html`<table class="table plan-table"><tr><th>Set</th><th>Weight</th><th>Reps</th><th></th></tr>
+        ${rxItem.detail.map((d, i) => html`<tr class="${i < sets.length ? "done" : ""}"><td>${i + 1}</td><td>${d.weight} lb</td><td>${d.reps}${d.plus ? "+" : ""}</td><td class="tiny muted">${d.label}</td></tr>`)}</table>` : ""}
       ${sets.length ? html`<ol class="sets">${sets.map((x) => html`
         <li><span><strong>${x.weight}</strong> lb × <strong>${x.reps}</strong>${isPR(s.workouts, ex.id, x, key) ? html` <span class="tag pr">PR</span>` : ""}</span>
         <button type="button" class="icon-btn" data-action="del-set" data-id="${x.id}" aria-label="Delete set">✕</button></li>`)}</ol>` : ""}
-      <form class="inline" data-form="set" data-ex="${ex.id}">
-        <label>lb<input name="weight" type="number" inputmode="decimal" step="0.5" min="0" value="${lastWeight ?? ""}" required></label>
+      <form class="inline" data-form="set" data-ex="${ex.id}" data-rx="${rx}" data-rest="${rest || ""}">
+        <label>lb<input name="weight" type="number" inputmode="decimal" step="0.5" min="0" value="${nextWeight ?? ""}" required></label>
         <label>reps<input name="reps" type="number" inputmode="numeric" min="1" value="${nextReps}" required></label>
         <button class="btn" type="submit">Log set ${sets.length + 1}</button>
+        ${rest ? html`<button type="button" class="btn ghost" data-action="rest" data-sec="${rest}" aria-label="Start rest timer">⏱ ${fmtRest(rest)}</button>` : ""}
       </form>
     </section>`;
 }
@@ -471,6 +695,15 @@ function renderMe(s) {
     </section>
 
     <section class="card">
+      <h2>Food preferences</h2>
+      <form data-form="prefs" class="grid-form">
+        <label class="span2">Diet for your daily menu<select name="diet">${Object.entries(DIETS).map(([k, v]) => html`<option value="${k}" ${k === (p.diet || "everything") ? "selected" : ""}>${v.label}</option>`)}</select></label>
+        <label class="check span2"><input type="checkbox" name="meatlessFridays" ${p.meatlessFridays ? "checked" : ""}> Meatless menus on every Friday (Lenten Fridays and Ash Wednesday are always meatless)</label>
+        <button class="btn span2" type="submit">Save preferences</button>
+      </form>
+    </section>
+
+    <section class="card">
       <h2>Your daily targets</h2>
       <table class="table">
         <tr><td>Maintenance (TDEE)</td><td>${target.tdee} kcal</td></tr>
@@ -542,6 +775,77 @@ function ensureFaith(s, key) {
   return (s.faith[key] ??= { checks: {}, lectio: {}, examen: {} });
 }
 
+function ensureExercise(st, name, repMin, repMax) {
+  let ex = st.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
+  const meta = CATALOG[name];
+  if (!ex) {
+    ex = { id: uid(), name, kind: meta?.[0] || "upper", muscle: meta?.[1], repMin, repMax, increment: meta?.[2] || 5 };
+    st.exercises.push(ex);
+  } else if (!ex.muscle && meta) ex.muscle = meta[1];
+  return ex;
+}
+
+function logPlanItems(indexes) {
+  const s = getState();
+  const plan = s.plans[ui.date];
+  if (!plan || !indexes.length) return;
+  const items = hydrate(plan, recipePool(s.webRecipes));
+  update((st) => {
+    for (const idx of indexes) {
+      const item = items[idx];
+      if (!item || plan.items[idx].logged) continue;
+      const m = scaled(item.recipe, item.mult);
+      const meal = SLOTS.find((x) => x.id === item.slot).meal;
+      const r1 = (x) => Math.round(x * 10) / 10;
+      (st.foods[ui.date] ??= []).push({
+        id: uid(), name: `${item.recipe.name}${item.mult !== 1 ? ` ×${item.mult}` : ""}`, meal,
+        cal: round(m.cal), p: r1(m.p), c: r1(m.c), f: r1(m.f), meat: item.recipe.flags?.has?.("m") || false,
+      });
+      st.plans[ui.date].items[idx].logged = true;
+    }
+  });
+  toast(indexes.length > 1 ? "Menu logged" : "Logged");
+}
+
+// ---------- rest timer ----------
+let restTimer = null;
+function startRest(sec) {
+  stopRest();
+  const el = document.createElement("div");
+  el.id = "rest-timer";
+  el.className = "rest-timer";
+  el.setAttribute("role", "timer");
+  const label = document.createElement("span");
+  const skip = document.createElement("button");
+  skip.type = "button";
+  skip.className = "btn btn-sm";
+  skip.textContent = "Skip";
+  skip.addEventListener("click", stopRest);
+  el.append(label, skip);
+  document.body.append(el);
+  const end = Date.now() + sec * 1000;
+  const token = {};
+  restTimer = token;
+  const tick = () => {
+    if (restTimer !== token) return;
+    const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+    label.textContent = left ? `Rest ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "Go — next set! 💪";
+    if (!left) {
+      clearInterval(token.id);
+      navigator.vibrate?.([200, 100, 200]);
+      skip.textContent = "Done";
+      setTimeout(() => { if (restTimer === token) stopRest(); }, 5000);
+    }
+  };
+  token.id = setInterval(tick, 250);
+  tick();
+}
+function stopRest() {
+  if (restTimer) clearInterval(restTimer.id);
+  restTimer = null;
+  document.getElementById("rest-timer")?.remove();
+}
+
 function ensureWorkout(s, key) {
   const w = (s.workouts[key] ??= { intention: "", offered: false, order: [], sets: [] });
   w.order ??= [];
@@ -561,11 +865,44 @@ const forms = {
   intention(d) { update((s) => { ensureWorkout(s, ui.date).intention = d.intention.trim(); }); },
   "add-ex"(d) { if (d.exId) update((s) => { const w = ensureWorkout(s, ui.date); if (!w.order.includes(d.exId)) w.order.push(d.exId); }); ui.chartEx = d.exId; },
   set(d, form) {
-    update((s) => { ensureWorkout(s, ui.date).sets.push({ id: uid(), exId: form.dataset.ex, weight: +d.weight, reps: +d.reps }); });
+    const set = { id: uid(), exId: form.dataset.ex, weight: +d.weight, reps: +d.reps };
+    if (form.dataset.rx) set.rx = form.dataset.rx;
+    update((s) => { ensureWorkout(s, ui.date).sets.push(set); });
+    if (form.dataset.rest) startRest(+form.dataset.rest);
   },
   "new-ex"(d) {
     const repMin = +d.repMin, repMax = Math.max(+d.repMax, repMin);
-    update((s) => { s.exercises.push({ id: uid(), name: d.name.trim(), kind: d.kind, repMin, repMax, increment: +d.increment }); });
+    update((s) => { s.exercises.push({ id: uid(), name: d.name.trim(), kind: d.kind, muscle: d.muscle, repMin, repMax, increment: +d.increment }); });
+  },
+  "start-program"(d, form) {
+    const id = form.dataset.id;
+    const tm = {};
+    if (id === "bbb531") TM_LIFTS.forEach((n) => { tm[n] = round5(+d[n] * 0.9); });
+    update((s) => { s.program = { id, start: ui.date, tm }; });
+    toast(`Started ${PROGRAMS[id].name}`);
+  },
+  prefs(d) {
+    update((s) => { s.profile.diet = d.diet; s.profile.meatlessFridays = !!d.meatlessFridays; });
+    toast("Preferences saved");
+  },
+  async "web-recipes"(d) {
+    const s = getState();
+    const target = targetsFor(s);
+    const share = SLOT_SHARE[d.slot];
+    ui.busy = { web: true };
+    ui.webResults = [];
+    render();
+    try {
+      const found = await findWebRecipes({
+        apiKey: s.settings.apiKey, slot: d.slot, dietLabel: DIETS[d.diet].label, extra: d.extra.trim(),
+        target: { cal: target.calories * share, p: target.protein * share, c: target.carbs * share, f: target.fat * share },
+      });
+      ui.busy = found.length ? {} : { webError: "No matching recipes found. Try a different request." };
+      ui.webResults = found;
+    } catch (err) {
+      ui.busy = { webError: err.message };
+    }
+    render();
   },
   lectio(d) { update((s) => { ensureFaith(s, ui.date).lectio = d; ensureFaith(s, ui.date).checks.gospel = true; }); },
   examen(d) { update((s) => { ensureFaith(s, ui.date).examen = d; ensureFaith(s, ui.date).checks.examen = true; }); },
@@ -610,6 +947,49 @@ const actions = {
     update((s) => { s.exercises = s.exercises.filter((e) => e.id !== el.dataset.id); });
   },
   "load-gospel"() { loadGospel(ui.date); },
+  "swap-meal"(el) {
+    const s = getState();
+    update((st) => {
+      const plan = ensurePlan(st, ui.date);
+      const next = swapSlot({ plan, slotId: el.dataset.slot, target: targetsFor(s), diet: plan.diet, meatless: plan.meatless, webRecipes: st.webRecipes });
+      const logged = new Set(plan.items.filter((i) => i.logged).map((i) => i.slot));
+      next.items.forEach((i) => { if (logged.has(i.slot) && i.slot !== el.dataset.slot) i.logged = true; });
+      st.plans[ui.date] = { ...plan, ...next };
+    });
+  },
+  "new-menu"() {
+    update((st) => {
+      const old = st.plans[ui.date];
+      buildDayPlan(st, ui.date, (old?.seedN || 0) + 1, old);
+    });
+  },
+  "log-meal"(el) { logPlanItems([+el.dataset.idx]); },
+  "log-menu"() {
+    const plan = getState().plans[ui.date];
+    logPlanItems((plan?.items || []).map((_, i) => i).filter((i) => !plan.items[i].logged));
+  },
+  grocery() { ui.grocery = !ui.grocery; render(); },
+  "save-web"(el) {
+    const r = ui.webResults[+el.dataset.i];
+    if (!r || r.saved) return;
+    r.saved = true;
+    update((st) => { st.webRecipes.push({ ...r, id: "w" + uid(), saved: undefined }); });
+  },
+  "del-web"(el) { update((st) => { st.webRecipes = st.webRecipes.filter((r) => r.id !== el.dataset.id); }); },
+  "load-session"() {
+    const s = getState();
+    const session = todaysSession(s.program, s.workouts, ui.date, tmFor(s));
+    update((st) => {
+      const w = ensureWorkout(st, ui.date);
+      const items = session.items.map((it) => ({ ...it, exId: ensureExercise(st, it.name, it.repMin, it.repMax).id }));
+      w.plan = { programId: session.programId, dayIndex: session.dayIndex, dayName: session.dayName, week: session.week, deload: session.deload, items };
+      w.order = [...new Set([...items.map((i) => i.exId), ...(w.order || [])])];
+    });
+  },
+  "stop-program"() {
+    if (confirm("Stop following this program? Your logged workouts stay.")) update((st) => { st.program = null; });
+  },
+  rest(el) { startRest(+el.dataset.sec); },
   async reflect() {
     const s = getState();
     const g = ui.gospel[ui.date]?.data || s.faith[ui.date]?.gospel;

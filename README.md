@@ -12,6 +12,14 @@ A phone-friendly app for losing fat **while keeping and building muscle**, plus 
 - Log food by meal. Leave calories blank and they're worked out from the macros. Save foods you eat often for one-tap logging.
 - Shows a 7-day average against your targets.
 
+### 🥗 Daily menu: 3 meals, a snack, and a healthy dessert
+- Each day gets a menu built from 48 recipes, many of them popular TikTok-style recipes (protein overnight oats, the salmon rice bowl, cottage cheese flatbread pizza, yogurt bark, Creami protein ice cream, cottage cheese cookie dough). Macros come from USDA values for each ingredient.
+- **Portions are scaled to hit your calories and protein.** The planner tries thousands of combinations and picks the closest fit. **Swap** any meal, or **Log it** with one tap.
+- Pick a diet: everything, pescatarian, vegetarian, vegan, dairy-free, or gluten-free. Diet labels come from the ingredients, so they're never wrong.
+- Lenten Fridays and Ash Wednesday menus are meatless automatically. You can also choose meatless menus on every Friday.
+- **Plan 7 days** gives you a full week of menus and one combined grocery list.
+- **Find recipes on TikTok & the web** (needs your API key): searches TikTok creators and recipe sites for meals that fit your macros and diet, with a link to each source. Recipes you save join your menu rotation.
+
 ### 📈 "Am I on pace?"
 The Today tab combines three signals:
 1. **Food:** weekly calorie average and how many days you hit your protein goal.
@@ -23,6 +31,26 @@ The Today tab combines three signals:
 - After two stalled sessions at the same weight, it suggests a 10% deload.
 - Marks PRs automatically and charts your estimated 1RM (Epley formula) for each lift.
 - You can edit the exercise library, rep ranges, and weight increments.
+
+### 📋 Proven programs
+Pick one and the app loads each day's workout, with sets, reps, and rest times:
+
+| Program | Days | Best for |
+|---|---|---|
+| **FST-7** (Hany Rambod; used with Mr. Olympia winners Jay Cutler and Phil Heath) | 5 | Size and fullness. Heavy 3 × 8–12 work, then a 7-set short-rest finisher |
+| **Push/Pull/Legs** (the r/Fitness beginner PPL) | 6 | Fast size and strength. Linear 5×5 main lifts plus 8–12 accessories |
+| **Upper/Lower Hypertrophy**, built on Schoenfeld et al. (2016, 2017) | 4 | Best all-round choice while cutting. 2× per week frequency, 10–20 sets per muscle |
+| **5/3/1 Boring But Big** (Jim Wendler) | 4 | Long-term strength. Training-max waves with a built-in deload week |
+| **Novice Linear Progression** (Starting Strength model) | 3 | New lifters. Add weight every session |
+
+**Built to prevent stalls:**
+- Every exercise progresses on its own rep range.
+- After two missed sessions, the app drops the weight 10% so you can build back up.
+- A deload week is scheduled every 6–8 weeks; 5/3/1 has its own deload built in.
+- A **weekly volume** check shows hard sets per muscle against the 10–20 sets/week range research supports.
+- A **rest timer** starts on its own after each set (FST-7 finishers use 30–45 s).
+
+No program can promise you'll never plateau, especially while cutting. These are the tools that prevent most stalls and get you past the rest.
 
 ### ✝️ Faith: *The Disciplined Disciple*
 A rule of life built for a Catholic who trains:
