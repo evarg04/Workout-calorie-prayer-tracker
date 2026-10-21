@@ -58,15 +58,24 @@ export function computeTargets(profile, currentWeightLb) {
   const asked = +profile.rateLbPerWeek || 0.5;
   const rate = mode === "cut" ? Math.min(asked, maxRate)
     : mode === "recomp" ? 0.5
-    : gaining ? Math.min(RATE_OPTIONS.bulk.includes(asked) ? asked : 0.5, 0.5) : 0;
+    : gaining ? (RATE_OPTIONS.bulk.includes(+profile.gainRateLbPerWeek) ? +profile.gainRateLbPerWeek : 0.5) : 0;
   const floor = profile.sex === "male" ? 1500 : 1200;
-  let calories = Math.max(floor, tdee + (losing ? -rate : rate) * 500);
+  const adjust = Math.round((losing ? -rate : rate) * 500);
+  let calories = Math.max(floor, tdee + adjust);
+  const floored = calories === floor && tdee + adjust < floor;
 
+  // Below maintenance, protein can be keyed to goal weight (default) or current weight;
+  // both land inside the 1.6–2.2 g/kg range shown to protect muscle in a deficit.
   const below = profile.goalWeightLb && profile.goalWeightLb < w;
-  const proteinBase = losing && below ? profile.goalWeightLb : w;
-  let protein = Math.round(proteinBase * (losing ? 1.0 : 0.8));
-  let fat = Math.round(Math.max(proteinBase * 0.3, (calories * 0.25) / 9));
+  const canChooseBasis = losing && below;
+  const proteinBasis = canChooseBasis && profile.proteinBasis !== "current" ? "goal" : "current";
+  const proteinBase = proteinBasis === "goal" ? profile.goalWeightLb : w;
+  const proteinPerLb = losing ? 1.0 : 0.8;
+  let protein = Math.round(proteinBase * proteinPerLb);
+  const fatFloor = proteinBase * 0.3, fatShare = (calories * 0.25) / 9;
+  let fat = Math.round(Math.max(fatFloor, fatShare));
   let carbs = Math.max(50, Math.round((calories - protein * 4 - fat * 9) / 4));
+  const rawCalories = calories;
   calories = Math.round(calories / 10) * 10;
 
   const o = profile.overrides;
@@ -80,6 +89,13 @@ export function computeTargets(profile, currentWeightLb) {
   return {
     bmr: Math.round(bmr), tdee: Math.round(tdee), calories, protein, carbs, fat,
     rate, maxRate, rateCapped: mode === "cut" && asked > maxRate, losing, gaining, mode,
+    proteinBasis, canChooseBasis,
+    proteinIf: canChooseBasis ? { goal: Math.round(profile.goalWeightLb * proteinPerLb), current: Math.round(w * proteinPerLb) } : null,
+    math: {
+      w, kg, cm, age: profile.age, sex: profile.sex, activity: profile.activity, adjust, floor, floored, rawCalories,
+      proteinBase, proteinPerLb, gPerKg: (protein / kg), fatFloor, fatShare, fatRule: fatFloor >= fatShare ? "floor" : "share",
+      overridden: !!(o && Object.values(o).some(Boolean)),
+    },
   };
 }
 

@@ -1907,6 +1907,36 @@ function renderMe(s) {
   return html`${goalCard(s)}${statusCard(s)}${installCard()}${renderMeSettings(s)}${securityCard(s)}`;
 }
 
+// Step-by-step: the person's own numbers through each formula.
+function mathBlock(t) {
+  const m = t.math;
+  const n = (x) => Math.round(x).toLocaleString();
+  const act = ACTIVITY_LEVELS.find(([v]) => v === +m.activity)?.[1] || "";
+  return html`
+    <details class="math"><summary>Show my math</summary>
+      <ol class="math-steps">
+        <li><span class="eyebrow">1 · Calories burned at rest (BMR)</span>
+          Mifflin–St Jeor: 10 × ${m.kg.toFixed(1)} kg + 6.25 × ${Math.round(m.cm)} cm − 5 × ${m.age} years ${m.sex === "male" ? "+ 5" : "− 161"} = <strong>${n(t.bmr)} kcal</strong>
+          <span class="sub-line">${m.w} lb is ${m.kg.toFixed(1)} kg. Uses your latest weigh-in.</span></li>
+        <li><span class="eyebrow">2 · Calories burned in a day</span>
+          ${n(t.bmr)} × ${m.activity} for "${act}" = <strong>${n(t.tdee)} kcal</strong>
+          <span class="sub-line">This is the number to check first. Most people pick an activity level that's too high; if you have a desk job and lift, "Light" is usually right.</span></li>
+        <li><span class="eyebrow">3 · Your goal: ${GOALS[t.mode].short.toLowerCase()}</span>
+          ${t.mode === "maintain" ? html`Eat at maintenance: <strong>${n(t.calories)} kcal</strong>` : html`${n(t.tdee)} ${m.adjust < 0 ? "−" : "+"} ${n(Math.abs(m.adjust))} (${t.rate} lb/week × 500) = <strong>${n(m.rawCalories)} kcal</strong>`}
+          ${m.floored ? html`<span class="sub-line">Raised to the ${m.floor} kcal minimum; eating less than that costs muscle and is hard to sustain.</span>` : ""}
+          ${t.rateCapped ? html`<span class="sub-line">Rate capped at ${t.maxRate} lb/week (1% of body weight).</span>` : ""}</li>
+        <li><span class="eyebrow">4 · Protein</span>
+          ${n(m.proteinBase)} lb (${t.proteinBasis === "goal" ? "goal" : "current"} weight) × ${m.proteinPerLb} g = <strong>${t.protein} g</strong>
+          <span class="sub-line">That's ${m.gPerKg.toFixed(1)} g per kg of your body weight.</span></li>
+        <li><span class="eyebrow">5 · Fat</span>
+          The larger of ${n(m.fatFloor)} g (0.3 g per lb) and ${n(m.fatShare)} g (25% of calories) = <strong>${t.fat} g</strong></li>
+        <li><span class="eyebrow">6 · Carbs</span>
+          What's left: (${n(m.rawCalories)} − ${t.protein} × 4 − ${t.fat} × 9) ÷ 4 = <strong>${t.carbs} g</strong></li>
+      </ol>
+      ${m.overridden ? html`<p class="small warn-text">You've set custom targets, so the numbers above the math use those instead.</p>` : ""}
+    </details>`;
+}
+
 function goalCard(s) {
   const p = s.profile;
   const target = targetsFor(s);
@@ -1936,8 +1966,7 @@ function renderMeSettings(s) {
         <label>Height (in)<input name="heightIn" type="number" min="48" max="96" step="0.5" value="${p.heightIn}"></label>
         <label>Start weight (lb)<input name="weightLb" type="number" step="0.1" value="${p.weightLb}"></label>
         <label>Goal weight (lb)<input name="goalWeightLb" type="number" step="0.1" value="${p.goalWeightLb}"></label>
-        ${RATE_OPTIONS[target.mode] ? html`<label>${target.mode === "cut" ? "Loss" : "Gain"} rate (lb/week)<select name="rateLbPerWeek">${RATE_OPTIONS[target.mode].map((r) => html`<option value="${r}" ${target.rate === r || (+p.rateLbPerWeek === r && !RATE_OPTIONS[target.mode].includes(target.rate)) ? "selected" : ""}>${r}</option>`)}</select></label>`
-          : html`<input type="hidden" name="rateLbPerWeek" value="${p.rateLbPerWeek}">`}
+        ${RATE_OPTIONS[target.mode] ? html`<label>${target.mode === "cut" ? "Loss" : "Gain"} rate (lb/week)<select name="${target.mode === "cut" ? "rateLbPerWeek" : "gainRateLbPerWeek"}">${RATE_OPTIONS[target.mode].map((r) => html`<option value="${r}" ${(target.mode === "cut" ? +p.rateLbPerWeek : target.rate) === r ? "selected" : ""}>${r}</option>`)}</select></label>` : ""}
         <label class="span2">Activity<select name="activity">${ACTIVITY_LEVELS.map(([v, l]) => html`<option value="${v}" ${+p.activity === v ? "selected" : ""}>${l}</option>`)}</select></label>
         <button class="btn span2" type="submit">Save goals</button>
       </form>
@@ -1963,6 +1992,14 @@ function renderMeSettings(s) {
         <tr><td>Fat</td><td>${target.fat} g</td></tr>
       </table>
       ${target.rateCapped ? html`<p class="small warn-text">Rate capped at ${target.maxRate} lb/week (~1% of bodyweight) so you keep your muscle.</p>` : ""}
+      ${target.canChooseBasis ? html`
+        <p class="field-label">Base protein on</p>
+        <div class="seg-tabs">
+          <button type="button" class="${target.proteinBasis === "goal" ? "is-on" : ""}" data-action="protein-basis" data-basis="goal">Goal weight · ${target.proteinIf.goal} g</button>
+          <button type="button" class="${target.proteinBasis === "current" ? "is-on" : ""}" data-action="protein-basis" data-basis="current">Current weight · ${target.proteinIf.current} g</button>
+        </div>
+        <p class="small muted">Both are inside the 1.6–2.2 g per kg that research shows protects muscle while dieting. Current weight is a little more, and helps keep you full.</p>` : ""}
+      ${mathBlock(target)}
       <p class="small muted">How it's built for <strong>${GOALS[target.mode].short.toLowerCase()}</strong>: Mifflin–St Jeor BMR × activity${target.mode === "maintain" ? ", eaten at maintenance" : `, ${target.losing ? "minus" : "plus"} ~${Math.round(target.rate * 500)} kcal a day (${target.rate} lb/week)`}. ${target.losing ? "Protein is 1 g per lb of goal weight, the single biggest lever for keeping muscle while eating below maintenance." : "Protein is 0.8 g per lb of body weight (about 1.8 g/kg), enough to build muscle."} Fat has a floor for hormones; carbs fill the rest to fuel your lifts. Recalculates as your weigh-ins change.</p>
       <details><summary>Set custom targets</summary>
         <form data-form="overrides" class="grid-form">
@@ -2384,8 +2421,10 @@ const forms = {
     update((s) => {
       Object.assign(s.profile, {
         sex: d.sex, age: +d.age, heightIn: +d.heightIn, weightLb: +d.weightLb,
-        goalWeightLb: +d.goalWeightLb, rateLbPerWeek: +d.rateLbPerWeek, activity: +d.activity,
+        goalWeightLb: +d.goalWeightLb, activity: +d.activity,
       });
+      if (d.rateLbPerWeek) s.profile.rateLbPerWeek = +d.rateLbPerWeek;
+      if (d.gainRateLbPerWeek) s.profile.gainRateLbPerWeek = +d.gainRateLbPerWeek;
     });
     toast("Goals saved");
   },
@@ -2479,13 +2518,13 @@ const actions = {
     render();
   },
   rest(el) { startRest(+el.dataset.sec); },
+  "protein-basis"(el) {
+    update((st) => { st.profile.proteinBasis = el.dataset.basis; });
+    toast(`Protein: ${targetsFor(getState()).protein} g a day`);
+  },
   "set-goal"(el) {
     const goal = el.dataset.goal;
-    update((st) => {
-      st.profile.goal = goal;
-      const opts = RATE_OPTIONS[goal];
-      if (opts && !opts.includes(+st.profile.rateLbPerWeek)) st.profile.rateLbPerWeek = goal === "bulk" ? 0.5 : 1;
-    });
+    update((st) => { st.profile.goal = goal; });
     const t = targetsFor(getState());
     toast(`${GOALS[goal].short}: ${t.calories.toLocaleString()} kcal, ${t.protein} g protein a day`);
   },

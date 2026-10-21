@@ -580,6 +580,13 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .goal-expect .eyebrow { display: block; margin-bottom: 3px; }
 .status .sec-head .link-btn { margin-left: auto; margin-right: 8px; }
 
+.math summary { font-weight: 700; }
+.math-steps { margin: 8px 0 0; padding: 0; list-style: none; }
+.math-steps li { padding: 9px 0; border-top: 1px solid var(--line); font-size: 15px; line-height: 1.45; }
+.math-steps li:first-child { border-top: 0; }
+.math-steps .eyebrow { display: block; margin-bottom: 2px; }
+.math-steps .sub-line { display: block; margin-top: 3px; }
+
 /* ---------- finisher sheet & extras ---------- */
 .sheet-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); z-index: 30; }
 .sheet {
