@@ -33,7 +33,12 @@ function workingSets(sets) {
   return { top, sets: sets.filter((s) => +s.weight === top) };
 }
 
-export function suggestNext(ex, workouts, beforeDate = dateKey(), rx) {
+// Working weight for a rep range from an estimated 1RM, leaving ~2 reps in reserve.
+export function workingWeight(oneRm, repMin, increment) {
+  return roundTo(oneRm / (1 + (repMin + 2) / 30), increment >= 5 ? 5 : 2.5);
+}
+
+export function suggestNext(ex, workouts, beforeDate = dateKey(), rx, baseline) {
   const past = history(workouts, ex.id, rx).filter((h) => h.date < beforeDate);
   if (!past.length) {
     const n = ex.sets || 3;
@@ -42,10 +47,19 @@ export function suggestNext(ex, workouts, beforeDate = dateKey(), rx) {
     const earlier = rx ? history(workouts, ex.id).filter((h) => h.date < beforeDate).slice(0, 3) : [];
     if (earlier.length) {
       const best = Math.max(...earlier.map((h) => bestE1rm(h.sets)));
-      const w = roundTo(best / (1 + (ex.repMin + 2) / 30), ex.increment >= 5 ? 5 : 2.5);
+      const w = workingWeight(best, ex.repMin, ex.increment);
       return {
         weight: w, reps: ex.repMin, sets: n, kind: "carry",
         note: `New rep range for you. From your history (est. 1RM ${Math.round(best)} lb), start at ${w} lb × ${range}, leaving about 2 reps in the tank. The app adjusts from there.`,
+      };
+    }
+    // Never logged: start from the max the user entered, if any.
+    if (baseline?.e1rm && !history(workouts, ex.id).some((h) => h.date < beforeDate)) {
+      const w = workingWeight(baseline.e1rm, ex.repMin, ex.increment);
+      const from = baseline.reps > 1 ? `${baseline.weight} × ${baseline.reps}` : `${baseline.weight} max`;
+      return {
+        weight: w, reps: ex.repMin, sets: n, kind: "carry",
+        note: `From your numbers (${from}, est. 1RM ${Math.round(baseline.e1rm)} lb): start at ${w} lb × ${range}, leaving about 2 reps in the tank.`,
       };
     }
     return { weight: null, reps: ex.repMin, sets: n, note: `First time: pick a weight you could do for ${ex.repMax + 2} reps, then ${n} × ${range}.` };

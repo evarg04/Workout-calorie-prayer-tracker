@@ -1,8 +1,8 @@
 import { getState, update, save, subscribe, uid, dateKey, addDays, parseKey, exportJSON, importJSON } from "./store.js";
 import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weeklyAdherence, paceVerdict, ACTIVITY_LEVELS } from "./nutrition.js";
-import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, setFeedback, exerciseVerdict } from "./lifts.js";
+import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, setFeedback, exerciseVerdict, e1rm, workingWeight } from "./lifts.js";
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE } from "./exercise-db.js";
-import { parseWorkoutText } from "./workout-text.js";
+import { parseWorkoutText, parseMaxes } from "./workout-text.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, fetchGospel, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
@@ -521,7 +521,59 @@ const tmFor = (s) => (name) => s.program?.tm?.[name] || 0;
 function est1rm(s, name) {
   const ex = s.exercises.find((e) => e.name === name);
   const h = ex ? sessionsFor(s.workouts, ex.id) : [];
-  return h.length ? round5(Math.max(...h.map((x) => bestE1rm(x.sets)))) : null;
+  if (h.length) return round5(Math.max(...h.map((x) => bestE1rm(x.sets))));
+  const b = ex && s.baselines?.[ex.id];
+  return b ? round5(b.e1rm) : null;
+}
+
+// ---------- my maxes ----------
+
+function maxesCard(s) {
+  const rows = ui.maxParsed;
+  const byId = Object.fromEntries(s.exercises.map((e) => [e.id, e]));
+  const saved = Object.entries(s.baselines || {}).filter(([id]) => byId[id]).sort((a, b) => byId[a[0]].name.localeCompare(byId[b[0]].name));
+  if (rows) {
+    return html`
+      <section class="card">
+        <div class="sec-head"><h2>Check your maxes</h2></div>
+        <form data-form="save-maxes">
+          <ul class="parsed">${rows.map((r, i) => r.error ? html`<li class="parsed-row"><span class="sub-line">"${r.line}"</span><p class="error">${r.error}</p></li>` : html`
+            <li class="parsed-row">
+              <div class="parsed-top">
+                <select name="ex${i}" aria-label="Exercise">
+                  ${r.options.map((o) => html`<option value="${o}" ${o === r.exercise ? "selected" : ""}>${o}</option>`)}
+                  <option value="new:${titleCase(r.name)}" ${r.status === "new" ? "selected" : ""}>New exercise: ${titleCase(r.name)}</option>
+                </select>
+                <span class="chip chip-${r.status === "sure" ? "good" : r.status === "check" ? "warning" : "new"}">${r.status === "sure" ? "matched" : r.status === "check" ? "check" : "new"}</span>
+              </div>
+              <div class="max-inputs">
+                <label>Weight (lb)<input name="w${i}" type="number" inputmode="decimal" min="0" step="0.5" value="${r.weight}"></label>
+                <label>Reps<input name="r${i}" type="number" inputmode="numeric" min="1" value="${r.reps}"></label>
+              </div>
+              ${r.notes.length ? html`<p class="sub-line">${r.notes.join(". ")}.</p>` : ""}
+            </li>`)}</ul>
+          <button class="btn full btn-log" type="submit">Save ${rows.filter((r) => !r.error).length} maxes</button>
+          <button class="btn ghost full" type="button" data-action="maxes-cancel">Cancel</button>
+        </form>
+      </section>`;
+  }
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>My maxes</h2>${saved.length ? html`<span class="sec-meta">${saved.length} lifts</span>` : ""}</div>
+      <p class="hint">Starting weights for any lift you haven't logged yet come from these. Once you log real sets, your logs take over.</p>
+      ${saved.length ? html`<table class="table maxes-table">
+        <tr><th>Lift</th><th>Entered</th><th>Est. 1RM</th><th>8 reps</th><th></th></tr>
+        ${saved.map(([id, b]) => html`<tr><td>${byId[id].name}</td><td>${b.weight}${b.reps > 1 ? `×${b.reps}` : ""}</td><td>${Math.round(b.e1rm)}</td><td>${workingWeight(b.e1rm, 8, byId[id].increment)}</td>
+          <td><button type="button" class="icon-btn" data-action="del-max" data-id="${id}" aria-label="Remove ${byId[id].name} max">✕</button></td></tr>`)}
+      </table><p class="hint">"8 reps" is a working weight for 8 reps with about 2 left in the tank.</p>` : ""}
+      <details ${saved.length ? "" : "open"}><summary>${saved.length ? "Add or update maxes" : "Enter your maxes"}</summary>
+        <form data-form="parse-maxes">
+          <p class="hint">One lift per line: "Bench 280", "Fly machine 140 for 6", "40 lbs db curl and hammer curl". No reps means a 1-rep max.</p>
+          <textarea name="text" rows="6" placeholder="Bench 280&#10;Overhead press 150 for 5" required>${ui.maxText || ""}</textarea>
+          <button class="btn full" type="submit">Read maxes</button>
+        </form>
+      </details>
+    </section>`;
 }
 
 function programList(s) {
@@ -633,6 +685,7 @@ function renderTrain(s) {
 
   if (sub === "progress") {
     return html`
+      ${maxesCard(s)}
       <section class="card">
         <div class="sec-head"><h2>Strength progress</h2></div>
         <label>Lift<select data-action="chart-ex">${s.exercises.map((e) => html`<option value="${e.id}" ${e.id === ui.chartEx ? "selected" : ""}>${e.name}</option>`)}</select></label>
@@ -908,7 +961,7 @@ function workoutReview(s, w, key, order, exById) {
       verdict = missed ? { kind: "down", text: "Missed prescribed reps on at least one set." } : { kind: "up", text: "Every prescribed set completed." };
     } else verdict = exerciseVerdict(sets, prev);
     const exRx = rxItem && !rxItem.detail ? { ...ex, repMin: rxItem.repMin, repMax: rxItem.repMax, sets: rxItem.sets } : ex;
-    const next = rxItem?.detail ? "Next time: follow the next 5/3/1 week." : `Next time: ${suggestNext(exRx, { ...s.workouts, [key]: w }, addDays(key, 1), rx || undefined).note.replace(/^Last: .*?Today: /, "")}`;
+    const next = rxItem?.detail ? "Next time: follow the next 5/3/1 week." : `Next time: ${suggestNext(exRx, { ...s.workouts, [key]: w }, addDays(key, 1), rx || undefined, s.baselines?.[ex.id]).note.replace(/^Last: .*?Today: /, "")}`;
     const prs = sets.filter((x) => isPR(s.workouts, id, x, key)).length;
     return { ex, verdict, next, prs, volume: sets.reduce((t, x) => t + (+x.weight || 0) * +x.reps, 0) };
   }).filter(Boolean);
@@ -948,7 +1001,7 @@ function exerciseCard(s, ex, w, key, open = true) {
     nextReps = d.reps;
   } else {
     const exRx = rxItem ? { ...ex, repMin: rxItem.repMin, repMax: rxItem.repMax, sets: rxItem.sets } : ex;
-    sug = suggestNext(exRx, s.workouts, key, rx || undefined);
+    sug = suggestNext(exRx, s.workouts, key, rx || undefined, s.baselines?.[ex.id]);
     nextReps = sug.repsPerSet?.[sets.length] ?? sug.reps;
     nextWeight = sets.length ? sets[sets.length - 1].weight : sug.weight;
   }
@@ -1424,6 +1477,36 @@ const forms = {
     render();
     toast("Exercise verified and added");
   },
+  "parse-maxes"(d) {
+    ui.maxText = d.text;
+    ui.maxParsed = parseMaxes(d.text, getState().exercises);
+    render();
+  },
+  "save-maxes"(d) {
+    const rows = ui.maxParsed || [];
+    let n = 0;
+    update((st) => {
+      st.baselines ??= {};
+      rows.forEach((r, i) => {
+        if (r.error) return;
+        const pick = d[`ex${i}`] || r.exercise;
+        const weight = +d[`w${i}`], reps = Math.max(1, +d[`r${i}`] || 1);
+        if (!pick || !(weight > 0)) return;
+        let ex;
+        if (pick.startsWith("new:")) {
+          const name = pick.slice(4);
+          ex = st.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
+          if (!ex) { ex = { id: uid(), name, kind: "upper", repMin: 8, repMax: 12, increment: 5, aliases: [r.name] }; st.exercises.push(ex); }
+        } else ex = ensureExercise(st, pick);
+        st.baselines[ex.id] = { weight, reps, e1rm: e1rm(weight, reps), date: ui.date };
+        n++;
+      });
+    });
+    ui.maxParsed = null;
+    ui.maxText = "";
+    render();
+    toast(`Saved ${n} maxes`);
+  },
   "parse-workout"(d) {
     ui.parsedText = d.text;
     ui.parsed = parseWorkoutText(d.text, getState().exercises);
@@ -1628,6 +1711,8 @@ const actions = {
   "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
   "scan-cancel"() { ui.scan = null; render(); },
   "parsed-edit"() { ui.parsed = null; render(); },
+  "maxes-cancel"() { ui.maxParsed = null; render(); },
+  "del-max"(el) { update((st) => { delete st.baselines[el.dataset.id]; }); },
   "ex-pick"(el) { ui.exPick = el.dataset.name; ui.exLookup = null; render(); },
   "ex-clear"() { ui.exQuery = ""; ui.exPick = null; ui.exLookup = null; render(); },
   "ex-lookup"(el) { ui.exQuery = el.dataset.q; startLookup(el.dataset.q); },

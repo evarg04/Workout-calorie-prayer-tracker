@@ -37,6 +37,7 @@ function defaults() {
     webRecipes: [],   // recipes found on the web: { id, name, slot, per, flags, source, ingredients, steps }
     program: null,    // { id, start, tm: { liftName: trainingMax } }
     programHistory: [], // past programs: [{ id, start, end }]
+    baselines: {},    // maxes the user entered: { exId: { weight, reps, e1rm, date } }
     settings: { apiKey: "" },
   };
 }

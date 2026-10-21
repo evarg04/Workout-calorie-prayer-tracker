@@ -1,5 +1,5 @@
 // Offline support: cache the app shell; network-first so updates arrive when online.
-const CACHE = "temple-v8";
+const CACHE = "temple-v9";
 const SHELL = [
   "./", "index.html", "styles.css", "manifest.webmanifest", "icons/icon.svg",
   "js/app.js", "js/store.js", "js/nutrition.js", "js/lifts.js", "js/liturgy.js", "js/chart.js", "js/reflect.js",
