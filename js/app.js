@@ -4,7 +4,7 @@ import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, s
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
 import { APP_VERSION } from "./version.js";
-import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, fetchGospel, usccbUrl } from "./liturgy.js";
+import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
 import { DIETS } from "./recipes.js";
@@ -99,7 +99,7 @@ function ruleItems(s, key) {
   const f = dayFaith(s, key);
   return [
     { id: "offering", label: "Morning Offering", hint: "Give the whole day to God before anything else." },
-    { id: "gospel", label: "Read the daily Gospel", hint: "Pray with it using Lectio Divina, under Pray." },
+    { id: "gospel", label: "Read the daily Gospel", hint: "USCCB readings, then Lectio Divina under Pray." },
     { id: "angelus", label: lit.easterSeason ? "Regina Caeli at noon" : "The Angelus at noon", hint: "Stop wherever you are, 2 minutes." },
     { id: "workout", label: "Offered my workout", hint: "Set an intention on the Train tab.", auto: !!s.workouts[key]?.offered },
     { id: "rosary", label: `Rosary — ${mysteriesFor(key).set} Mysteries`, hint: "Even one decade counts. Great for a walk or cardio." },
@@ -1215,7 +1215,7 @@ function renderFaith(s) {
   const rule = ruleItems(s, key);
   const m = mysteriesFor(key);
   const virtue = virtueOfWeek(key);
-  const g = ui.gospel[key] || (f.gospel ? { data: f.gospel } : null);
+  const pasted = f.usccbGospel || null; // text the user pasted from the USCCB page (optional)
   const angelus = lit.easterSeason ? PRAYERS.reginaCaeli : PRAYERS.angelus;
   const prayerFor = {
     offering: html`<p class="prayer">${PRAYERS.morningOffering}</p>`,
@@ -1225,13 +1225,13 @@ function renderFaith(s) {
   const offerings = Object.entries(s.workouts).filter(([, w]) => w.intention).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 12);
 
   const sub = ui.sub.faith;
-  const head = dayHead(key, g?.data?.day || lit.season, html`<p class="day-note"><span class="swatch swatch-${lit.color}" aria-hidden="true"></span>${lit.season} · vestments ${lit.color}</p>`);
+  const head = dayHead(key, lit.season, html`<p class="day-note"><span class="swatch swatch-${lit.color}" aria-hidden="true"></span>${lit.season} · vestments ${lit.color}</p>`);
 
   if (sub === "pray") {
     return html`
       ${head}
       <section class="card">
-        <div class="sec-head"><h2>Lectio Divina</h2><span class="sec-meta">${g?.data?.source || "today's Gospel"}</span></div>
+        <div class="sec-head"><h2>Lectio Divina</h2><span class="sec-meta">${pasted?.source || "today's Gospel"}</span></div>
         <form data-form="lectio">
           ${LECTIO.map(([title, prompt, field]) => html`
             <div class="step"><strong>${title}</strong><p class="hint">${prompt}</p>
@@ -1292,49 +1292,32 @@ function renderFaith(s) {
     ${penanceCard(key)}
 
     <section class="card">
-      <div class="sec-head"><h2>Today's Gospel</h2>${g?.data?.source ? html`<span class="sec-meta">${g.data.source}</span>` : ""}</div>
-      ${g?.data ? html`
-        ${g.data.heading ? html`<p class="small muted"><em>${g.data.heading}</em></p>` : ""}
-        <div class="gospel">${raw(g.data.html || esc(g.data.text).replace(/\n/g, "<br>"))}</div>
-        ${g.data.copyright ? html`<p class="tiny muted">${g.data.copyright}</p>` : ""}`
-      : g?.error ? html`<p class="muted">${g.error}</p>`
-      : html`<p class="muted">${g?.loading ? "Loading the readings…" : "Readings not loaded."}</p>`}
-      <div class="row">
-        ${!g?.data ? html`<button type="button" class="btn" data-action="load-gospel">Load Gospel</button>` : ""}
-        <a class="btn ghost" href="${usccbUrl(key)}" target="_blank" rel="noopener">USCCB readings (NABRE) ↗</a>
-      </div>
-      ${g?.error || !g?.data ? html`<details><summary>Paste the Gospel yourself</summary>
+      <div class="sec-head"><h2>Today's readings</h2><span class="sec-meta">USCCB · NABRE</span></div>
+      <p class="hint">The readings for ${fmtDate(key, { weekday: "long", month: "long", day: "numeric" })}, exactly as proclaimed at Mass in the U.S., from the United States Conference of Catholic Bishops.</p>
+      <a class="btn full" href="${usccbUrl(key)}" target="_blank" rel="noopener">Open today's readings on USCCB ↗</a>
+      <p class="hint">Read the Gospel there, then come back and pray with it under <button type="button" class="link-btn inline-link" data-sub-go="pray">Pray</button>.</p>
+      ${pasted ? html`<div class="gospel-pasted"><div class="eyebrow">${pasted.source || "Your Gospel text"}</div><div class="gospel">${raw(esc(pasted.text).replace(/\n/g, "<br>"))}</div></div>` : ""}
+      <details><summary>${pasted ? "Replace pasted Gospel" : "Keep the Gospel text here (optional)"}</summary>
+        <p class="hint">Copy the Gospel from the USCCB page and paste it to keep it with your prayer for the day. It stays on your phone.</p>
         <form data-form="paste-gospel" class="grid-form">
-          <label class="span2">Reference<input name="source" placeholder="Luke 12:39-48"></label>
-          <label class="span2">Text<textarea name="text" rows="5" required></textarea></label>
-          <button class="btn span2" type="submit">Use this text</button>
-        </form></details>` : ""}
+          <label class="span2">Reference<input name="source" placeholder="Luke 12:39-48" value="${pasted?.source || ""}"></label>
+          <label class="span2">Text<textarea name="text" rows="5" autocapitalize="sentences">${pasted?.text || ""}</textarea></label>
+          <button class="btn span2" type="submit">Save</button>
+        </form>
+      </details>
     </section>
 
     <section class="card">
       <div class="sec-head"><h2>A Catholic reflection</h2></div>
       ${f.reflection ? html`<div class="reflection">${raw(renderMarkdown(f.reflection))}</div>
         <p class="tiny muted">AI-written reflection, meant to aid prayer — not Magisterial teaching. Test it against the Catechism and your priest.</p>`
-      : s.settings.apiKey ? html`<p class="small muted">Generate an interpretation rooted in the Fathers, the saints and the Catechism, with a resolution for today.</p>`
+      : s.settings.apiKey ? html`<p class="hint">An interpretation of today's USCCB Gospel rooted in the Fathers, the saints and the Catechism, with a resolution for today.</p>`
       : html`<p class="hint">Add an Anthropic API key on the Me tab to generate a daily Catholic interpretation of the Gospel. Meanwhile, pray with Lectio Divina under Pray.</p>`}
-      ${s.settings.apiKey && g?.data ? html`<button type="button" class="btn" data-action="reflect" ${ui.busy.reflect ? "disabled" : ""}>${ui.busy.reflect ? "Writing…" : f.reflection ? "Regenerate" : "Generate reflection"}</button>` : ""}
+      ${s.settings.apiKey ? html`<button type="button" class="btn" data-action="reflect" ${ui.busy.reflect ? "disabled" : ""}>${ui.busy.reflect ? "Writing…" : f.reflection ? "Regenerate" : "Generate reflection"}</button>` : ""}
       ${ui.busy.reflectError ? html`<p class="error">${ui.busy.reflectError}</p>` : ""}
     </section>
 
 `;
-}
-
-async function loadGospel(key) {
-  ui.gospel[key] = { loading: true };
-  render();
-  try {
-    const data = await fetchGospel(key);
-    ui.gospel[key] = { data };
-    update((s) => { (s.faith[key] ??= { checks: {}, lectio: {}, examen: {} }).gospel = data; });
-  } catch (err) {
-    ui.gospel[key] = { error: err.message };
-    render();
-  }
 }
 
 // ---------- ME ----------
@@ -1442,7 +1425,7 @@ function securityCard(s) {
       <div class="sec-head"><h2>Privacy and security</h2></div>
       <ul class="status-list">
         <li>Your food, workouts, weight and prayers are stored only on this phone. Nothing is uploaded to GitHub or any server.</li>
-        <li>The app only loads code from itself, plus fonts, the Gospel feed and (if you add a key) Anthropic. Anything else is blocked.</li>
+        <li>The app only loads code from itself, plus fonts and (if you add a key) Anthropic. Anything else is blocked. Daily readings open on the USCCB website.</li>
         <li>Your API key is stored only on this phone and sent only to Anthropic. Set a monthly spending limit at console.anthropic.com.</li>
       </ul>
       <h3 class="entry-title">App lock</h3>
@@ -1604,7 +1587,6 @@ function render() {
   view.innerHTML = RENDER[ui.tab](s)[RAW];
   if (ui.tab === "today") drawWeightChart(s);
   if (ui.tab === "train") drawLiftChart(s);
-  if (ui.tab === "faith" && ui.sub.faith === "today" && !ui.gospel[ui.date] && !s.faith[ui.date]?.gospel && navigator.onLine) loadGospel(ui.date);
 }
 
 function renderSubnav() {
@@ -1940,9 +1922,13 @@ const forms = {
   lectio(d) { update((s) => { ensureFaith(s, ui.date).lectio = d; ensureFaith(s, ui.date).checks.gospel = true; }); },
   examen(d) { update((s) => { ensureFaith(s, ui.date).examen = d; ensureFaith(s, ui.date).checks.examen = true; }); },
   "paste-gospel"(d) {
-    const data = { source: d.source.trim(), text: d.text.trim(), heading: "", day: "", copyright: "" };
-    ui.gospel[ui.date] = { data };
-    update((s) => { ensureFaith(s, ui.date).gospel = data; });
+    const text = d.text.trim();
+    update((s) => {
+      const f = ensureFaith(s, ui.date);
+      if (text) f.usccbGospel = { source: d.source.trim(), text };
+      else delete f.usccbGospel;
+    });
+    toast(text ? "Saved" : "Cleared");
   },
   profile(d) {
     update((s) => {
@@ -1988,7 +1974,6 @@ const actions = {
     if (!confirm("Remove this exercise from your library? Logged sets stay in your history.")) return;
     update((s) => { s.exercises = s.exercises.filter((e) => e.id !== el.dataset.id); });
   },
-  "load-gospel"() { loadGospel(ui.date); },
   "swap-meal"(el) {
     const s = getState();
     update((st) => {
@@ -2063,14 +2048,13 @@ const actions = {
   },
   async reflect() {
     const s = getState();
-    const g = ui.gospel[ui.date]?.data || s.faith[ui.date]?.gospel;
-    if (!g) return;
+    const g = s.faith[ui.date]?.usccbGospel;
     ui.busy = { reflect: true };
     render();
     try {
       const text = await generateReflection({
         apiKey: s.settings.apiKey, date: fmtDate(ui.date, { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
-        liturgicalDay: g.day || liturgicalDay(ui.date).season, gospelRef: g.source, gospelText: g.text,
+        liturgicalDay: liturgicalDay(ui.date).season, readingsUrl: usccbUrl(ui.date), gospelRef: g?.source, gospelText: g?.text,
       });
       ui.busy = {};
       update((st) => { ensureFaith(st, ui.date).reflection = text; });

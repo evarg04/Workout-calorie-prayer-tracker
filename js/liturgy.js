@@ -136,18 +136,18 @@ export const LECTIO = [
 
 // One virtue a week: each pairs the discipline of the body with the life of the soul.
 export const VIRTUES = [
-  { name: "Temperance", body: "Hit your calorie target — no more, no less. Stop eating at satisfied, not stuffed.", soul: "Master the appetites so they serve you, not rule you.", verse: "Do you not know that your body is a temple of the Holy Spirit within you, which you have from God? … So glorify God in your body.", ref: "1 Corinthians 6:19–20", saint: "St. Pier Giorgio Frassati", quote: "Verso l'alto! — To the heights!" },
-  { name: "Fortitude", body: "When the last rep gets hard, finish it with good form. Don't skip the hard lift.", soul: "Courage to do the right thing when it costs you.", verse: "I can do all things in him who strengthens me.", ref: "Philippians 4:13", saint: "St. Sebastian, patron of athletes", quote: "He endured arrows and still would not deny Christ." },
-  { name: "Prudence", body: "Plan tomorrow's meals and workout tonight. Prep your protein.", soul: "See clearly, judge rightly, then act.", verse: "The simple believes everything, but the prudent looks where he is going.", ref: "Proverbs 14:15", saint: "St. Thomas More", quote: "\"The king's good servant, but God's first.\"" },
-  { name: "Justice", body: "Give your body what it's owed: sleep, water, protein, rest days.", soul: "Give God, family, and neighbor what is owed to them.", verse: "What does the LORD require of you but to do justice, and to love kindness, and to walk humbly with your God?", ref: "Micah 6:8", saint: "St. Joseph the Worker", quote: "Silent, faithful, and strong for those in his care." },
-  { name: "Faith", body: "Trust the process: the scale and the bar move slowly. Keep showing up.", soul: "Believe what God has revealed, even when you can't see the results yet.", verse: "Now faith is the assurance of things hoped for, the conviction of things not seen.", ref: "Hebrews 11:1", saint: "St. John Paul II", quote: "\"Do not be afraid. Open wide the doors for Christ.\"" },
-  { name: "Hope", body: "Stalled? Deload, rebuild, and go again. A plateau is not the end.", soul: "Your destiny is heaven. Every effort here is aimed there.", verse: "They who wait for the LORD shall renew their strength … they shall run and not be weary, they shall walk and not faint.", ref: "Isaiah 40:31", saint: "St. Philip Neri", quote: "\"Cheerfulness strengthens the heart and makes us persevere in a good life.\"" },
-  { name: "Charity", body: "Spot someone. Encourage someone at the gym. Cook a healthy meal for your family.", soul: "Love God above all, and your neighbor as yourself.", verse: "Love is patient and kind; love is not jealous or boastful.", ref: "1 Corinthians 13:4", saint: "St. Teresa of Calcutta", quote: "\"Do small things with great love.\"" },
+  { name: "Temperance", body: "Hit your calorie target — no more, no less. Stop eating at satisfied, not stuffed.", soul: "Master the appetites so they serve you, not rule you.", verse: "Do you not know that your body is a temple of the holy Spirit within you, whom you have from God, and that you are not your own? … Therefore glorify God in your body.", ref: "1 Corinthians 6:19–20", saint: "St. Pier Giorgio Frassati", quote: "Verso l'alto! — To the heights!" },
+  { name: "Fortitude", body: "When the last rep gets hard, finish it with good form. Don't skip the hard lift.", soul: "Courage to do the right thing when it costs you.", verse: "I have the strength for everything through him who empowers me.", ref: "Philippians 4:13", saint: "St. Sebastian, patron of athletes", quote: "He endured arrows and still would not deny Christ." },
+  { name: "Prudence", body: "Plan tomorrow's meals and workout tonight. Prep your protein.", soul: "See clearly, judge rightly, then act.", verse: "The naive believe everything, but the shrewd watch their steps.", ref: "Proverbs 14:15", saint: "St. Thomas More", quote: "\"The king's good servant, but God's first.\"" },
+  { name: "Justice", body: "Give your body what it's owed: sleep, water, protein, rest days.", soul: "Give God, family, and neighbor what is owed to them.", verse: "You have been told, O mortal, what is good, and what the LORD requires of you: Only to do justice and to love goodness, and to walk humbly with your God.", ref: "Micah 6:8", saint: "St. Joseph the Worker", quote: "Silent, faithful, and strong for those in his care." },
+  { name: "Faith", body: "Trust the process: the scale and the bar move slowly. Keep showing up.", soul: "Believe what God has revealed, even when you can't see the results yet.", verse: "Faith is the realization of what is hoped for and evidence of things not seen.", ref: "Hebrews 11:1", saint: "St. John Paul II", quote: "\"Do not be afraid. Open wide the doors for Christ.\"" },
+  { name: "Hope", body: "Stalled? Deload, rebuild, and go again. A plateau is not the end.", soul: "Your destiny is heaven. Every effort here is aimed there.", verse: "They that hope in the LORD will renew their strength, they will soar on eagles' wings; they will run and not grow weary, walk and not grow faint.", ref: "Isaiah 40:31", saint: "St. Philip Neri", quote: "\"Cheerfulness strengthens the heart and makes us persevere in a good life.\"" },
+  { name: "Charity", body: "Spot someone. Encourage someone at the gym. Cook a healthy meal for your family.", soul: "Love God above all, and your neighbor as yourself.", verse: "Love is patient, love is kind. It is not jealous, [love] is not pompous, it is not inflated.", ref: "1 Corinthians 13:4", saint: "St. Teresa of Calcutta", quote: "\"Do small things with great love.\"" },
   { name: "Humility", body: "Leave the ego at the door — lighter weight, perfect form, full range.", soul: "Know the truth about yourself: all you have is gift.", verse: "Humble yourselves before the Lord and he will exalt you.", ref: "James 4:10", saint: "St. Thérèse of Lisieux", quote: "The Little Way: great love in small, hidden things." },
-  { name: "Perseverance", body: "Log every meal this week, even the bad ones. Consistency beats intensity.", soul: "Keep praying when it feels dry. Keep coming back after you fall.", verse: "Let us not grow weary in well-doing, for in due season we shall reap, if we do not lose heart.", ref: "Galatians 6:9", saint: "St. Monica", quote: "Prayed 17 years for her son — he became St. Augustine." },
-  { name: "Diligence", body: "No skipped sessions. Show up, warm up, do the work.", soul: "Fight sloth — especially spiritual sloth. Pray first, scroll later.", verse: "In a race all the runners compete, but only one receives the prize. So run that you may obtain it.", ref: "1 Corinthians 9:24", saint: "St. Paul the Apostle", quote: "\"I have fought the good fight, I have finished the race, I have kept the faith.\" (2 Tim 4:7)" },
-  { name: "Self-Mastery", body: "Choose one comfort to give up this week (sweets, soda, late-night snacks).", soul: "Chastity of eyes and heart; the body serves the soul, not the reverse.", verse: "I pommel my body and subdue it, lest after preaching to others I myself should be disqualified.", ref: "1 Corinthians 9:27", saint: "St. Carlo Acutis", quote: "\"The Eucharist is my highway to heaven.\"" },
-  { name: "Gratitude", body: "Thank God for a body that can lift, walk, and heal.", soul: "Gratitude is the memory of the heart. Count gifts in your Examen.", verse: "Give thanks in all circumstances; for this is the will of God in Christ Jesus for you.", ref: "1 Thessalonians 5:18", saint: "St. Irenaeus", quote: "\"The glory of God is man fully alive.\"" },
+  { name: "Perseverance", body: "Log every meal this week, even the bad ones. Consistency beats intensity.", soul: "Keep praying when it feels dry. Keep coming back after you fall.", verse: "Let us not grow tired of doing good, for in due time we shall reap our harvest, if we do not give up.", ref: "Galatians 6:9", saint: "St. Monica", quote: "Prayed 17 years for her son — he became St. Augustine." },
+  { name: "Diligence", body: "No skipped sessions. Show up, warm up, do the work.", soul: "Fight sloth — especially spiritual sloth. Pray first, scroll later.", verse: "Do you not know that the runners in the stadium all run in the race, but only one wins the prize? Run so as to win.", ref: "1 Corinthians 9:24", saint: "St. Paul the Apostle", quote: "\"I have competed well; I have finished the race; I have kept the faith.\" (2 Tim 4:7)" },
+  { name: "Self-Mastery", body: "Choose one comfort to give up this week (sweets, soda, late-night snacks).", soul: "Chastity of eyes and heart; the body serves the soul, not the reverse.", verse: "No, I drive my body and train it, for fear that, after having preached to others, I myself should be disqualified.", ref: "1 Corinthians 9:27", saint: "St. Carlo Acutis", quote: "\"The Eucharist is my highway to heaven.\"" },
+  { name: "Gratitude", body: "Thank God for a body that can lift, walk, and heal.", soul: "Gratitude is the memory of the heart. Count gifts in your Examen.", verse: "In all circumstances give thanks, for this is the will of God for you in Christ Jesus.", ref: "1 Thessalonians 5:18", saint: "St. Irenaeus", quote: "\"The glory of God is man fully alive.\"" },
 ];
 
 export function virtueOfWeek(key) {
@@ -157,66 +157,9 @@ export function virtueOfWeek(key) {
   return VIRTUES[(week + d.getFullYear()) % VIRTUES.length];
 }
 
-// --- Daily Gospel via Universalis' public JSONP Mass feed ---------------------
-
-const ALLOWED = new Set(["P", "BR", "EM", "I", "STRONG", "B", "SPAN", "DIV", "SUP", "SMALL"]);
-
-// Strip anything but simple formatting from feed HTML before it touches the DOM.
-export function sanitize(html) {
-  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
-  const clean = (node) => {
-    [...node.childNodes].forEach((child) => {
-      if (child.nodeType === 3) return;
-      if (child.nodeType !== 1 || ["SCRIPT", "STYLE", "IFRAME", "OBJECT"].includes(child.tagName)) return child.remove();
-      clean(child);
-      if (ALLOWED.has(child.tagName)) [...child.attributes].forEach((a) => child.removeAttribute(a.name));
-      else child.replaceWith(...child.childNodes);
-    });
-  };
-  const root = doc.body.firstChild;
-  clean(root);
-  return root.innerHTML;
-}
-
-export function toPlainText(html) {
-  const doc = new DOMParser().parseFromString(html.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n\n"), "text/html");
-  return doc.body.textContent.replace(/\n{3,}/g, "\n\n").trim();
-}
+// --- Daily readings: USCCB (NABRE, the translation read at Mass in the U.S.) ---------------
 
 export function usccbUrl(key) {
   const [y, m, d] = key.split("-");
   return `https://bible.usccb.org/bible/readings/${m}${d}${y.slice(2)}.cfm`;
-}
-
-let pending = Promise.resolve();
-
-export function fetchGospel(key) {
-  // JSONP uses one global callback name, so serialize requests.
-  pending = pending.catch(() => {}).then(() => new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    const timer = setTimeout(() => done(new Error("Timed out loading the readings.")), 12000);
-    function done(err, data) {
-      clearTimeout(timer);
-      delete window.universalisCallback;
-      script.remove();
-      err ? reject(err) : resolve(data);
-    }
-    window.universalisCallback = (data) => {
-      const gospelKey = Object.keys(data).find((k) => /^Mass_G/.test(k)) || "Mass_G";
-      const g = data[gospelKey];
-      if (!g?.text) return done(new Error("No Gospel in today's feed."));
-      done(null, {
-        day: toPlainText(data.day || ""),
-        source: toPlainText(g.source || ""),
-        heading: toPlainText(g.heading || ""),
-        html: sanitize(g.text),
-        text: toPlainText(g.text),
-        copyright: toPlainText(data.copyright?.text || ""),
-      });
-    };
-    script.onerror = () => done(new Error("Couldn't reach the readings service (are you offline?)."));
-    script.src = `https://universalis.com/${key.replace(/-/g, "")}/jsonpmass.js`;
-    document.head.appendChild(script);
-  }));
-  return pending;
 }
