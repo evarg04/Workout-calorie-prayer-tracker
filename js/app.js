@@ -566,13 +566,15 @@ function maxesCard(s) {
         ${saved.map(([id, b]) => html`<tr><td>${byId[id].name}</td><td>${b.weight}${b.reps > 1 ? `×${b.reps}` : ""}</td><td>${Math.round(b.e1rm)}</td><td>${workingWeight(b.e1rm, 8, byId[id].increment)}</td>
           <td><button type="button" class="icon-btn" data-action="del-max" data-id="${id}" aria-label="Remove ${byId[id].name} max">✕</button></td></tr>`)}
       </table><p class="hint">"8 reps" is a working weight for 8 reps with about 2 left in the tank.</p>` : ""}
-      <details ${saved.length ? "" : "open"}><summary>${saved.length ? "Add or update maxes" : "Enter your maxes"}</summary>
-        <form data-form="parse-maxes">
-          <p class="hint">One lift per line: "Bench 280", "Fly machine 140 for 6", "40 lbs db curl and hammer curl". No reps means a 1-rep max.</p>
-          <textarea name="text" rows="6" placeholder="Bench 280&#10;Overhead press 150 for 5" required>${ui.maxText || ""}</textarea>
-          <button class="btn full" type="submit">Read maxes</button>
-        </form>
-      </details>
+      <form data-form="parse-maxes" class="maxes-entry">
+        <h3 class="entry-title">${saved.length ? "Add or update maxes" : "Enter your maxes"}</h3>
+        <p class="hint">One lift per line: "Bench 280", "Fly machine 140 for 6", "40 lbs db curl and hammer curl". No reps means a 1-rep max. Copied a list? Tap Paste.</p>
+        <textarea name="text" rows="7" placeholder="Bench 280&#10;Overhead press 150 for 5" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" aria-label="Your maxes, one lift per line">${ui.maxText || ""}</textarea>
+        <div class="row">
+          <button class="btn ghost" type="button" data-action="paste-maxes">Paste</button>
+          <button class="btn grow-btn" type="submit">Read maxes</button>
+        </div>
+      </form>
     </section>`;
 }
 
@@ -783,8 +785,11 @@ function typeWorkoutCard(s) {
         <div class="sec-head"><h2>Type a workout</h2></div>
         <p class="hint">One exercise per line, the way you'd text it: "Pull up 4x10", "Single arm cable row 3x8 60 lbs", "Chest supported row 3x6 3 plates each side".</p>
         <form data-form="parse-workout">
-          <textarea name="text" rows="4" placeholder="Pull up 4x10&#10;Single arm cable row 3x8 60 lbs" required>${ui.parsedText || ""}</textarea>
-          <button class="btn full" type="submit">Read workout</button>
+          <textarea name="text" rows="4" placeholder="Pull up 4x10&#10;Single arm cable row 3x8 60 lbs" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" aria-label="Your workout, one exercise per line">${ui.parsedText || ""}</textarea>
+          <div class="row">
+            <button class="btn ghost" type="button" data-action="paste-workout">Paste</button>
+            <button class="btn grow-btn" type="submit">Read workout</button>
+          </div>
         </form>
       </section>`;
   }
@@ -1394,6 +1399,19 @@ function logPlanItems(indexes) {
   toast(indexes.length > 1 ? "Menu logged" : "Logged");
 }
 
+// Fill a textarea from the clipboard (needs a tap; iOS shows a small "Paste" confirmation).
+async function pasteInto(textarea) {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text.trim()) return toast("Clipboard is empty");
+    textarea.value = text;
+    textarea.focus();
+  } catch {
+    textarea.focus();
+    toast("Long-press the box and choose Paste");
+  }
+}
+
 // ---------- rest timer ----------
 let restTimer = null;
 function startRest(sec) {
@@ -1478,6 +1496,7 @@ const forms = {
     toast("Exercise verified and added");
   },
   "parse-maxes"(d) {
+    if (!d.text.trim()) return toast("Type or paste your maxes first");
     ui.maxText = d.text;
     ui.maxParsed = parseMaxes(d.text, getState().exercises);
     render();
@@ -1508,6 +1527,7 @@ const forms = {
     toast(`Saved ${n} maxes`);
   },
   "parse-workout"(d) {
+    if (!d.text.trim()) return toast("Type or paste your workout first");
     ui.parsedText = d.text;
     ui.parsed = parseWorkoutText(d.text, getState().exercises);
     render();
@@ -1712,6 +1732,8 @@ const actions = {
   "scan-cancel"() { ui.scan = null; render(); },
   "parsed-edit"() { ui.parsed = null; render(); },
   "maxes-cancel"() { ui.maxParsed = null; render(); },
+  "paste-maxes"(el) { pasteInto(el.closest("form").querySelector("textarea")); },
+  "paste-workout"(el) { pasteInto(el.closest("form").querySelector("textarea")); },
   "del-max"(el) { update((st) => { delete st.baselines[el.dataset.id]; }); },
   "ex-pick"(el) { ui.exPick = el.dataset.name; ui.exLookup = null; render(); },
   "ex-clear"() { ui.exQuery = ""; ui.exPick = null; ui.exLookup = null; render(); },
