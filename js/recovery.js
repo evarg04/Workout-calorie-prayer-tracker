@@ -38,17 +38,38 @@ export function mobilityFor(kind) {
 
 const round5 = (x) => Math.max(0, Math.round(x / 5) * 5);
 
-// Ramp-up sets toward the first working weight: fewer reps as the load climbs, so you arrive primed, not tired.
-export function rampSets(workWeight, workReps, isBarbell) {
-  if (!workWeight) return [];
-  const scheme = workReps <= 6
-    ? [[0.4, 8], [0.6, 5], [0.75, 3], [0.85, 1]]
-    : [[0.5, 8], [0.7, 5], [0.85, 2]];
-  const sets = scheme.map(([pct, reps]) => ({ weight: round5(workWeight * pct), reps, pct }));
-  const floor = isBarbell ? 45 : 0;
-  return sets
-    .map((s) => ({ ...s, weight: Math.max(floor, s.weight) }))
-    .filter((s, i, all) => s.weight < workWeight && (i === 0 || s.weight > all[i - 1].weight));
+// Warm-up sets toward a lift's working weight. Built not to fatigue: reps drop as the load
+// climbs, every set stays far from failure, and muscles that are already warm get one feeder
+// set (or none) instead of a full ramp.
+export function warmupSets({ workWeight, workReps, equipment = "", warm = false, increment = 5, tm = null }) {
+  if (!workWeight || workWeight < 20 || increment === 0) {
+    return { sets: [], note: workWeight ? "No warm-up sets needed. Make your first working set smooth and controlled." : "" };
+  }
+  const barbell = /barbell|smith/i.test(equipment);
+  const step = barbell || workWeight >= 50 ? 5 : 2.5;
+  const r = (x) => Math.round(x / step) * step;
+  const heavy = workReps <= 6;
+  let scheme;
+  if (tm) scheme = [[0.4 * tm, 5], [0.5 * tm, 5], [0.6 * tm, 3]]; // Wendler's 5/3/1 warm-up, % of Training Max
+  else if (warm) scheme = heavy ? [[0.6 * workWeight, 3]] : [[0.6 * workWeight, 5]];
+  else if (barbell) scheme = heavy
+    ? [[45, 8], [0.4 * workWeight, 5], [0.6 * workWeight, 3], [0.8 * workWeight, 2], [0.9 * workWeight, 1]]
+    : [[45, 8], [0.5 * workWeight, 5], [0.7 * workWeight, 3], [0.85 * workWeight, 1]];
+  else scheme = heavy ? [[0.5 * workWeight, 6], [0.75 * workWeight, 3]] : [[0.5 * workWeight, 8], [0.75 * workWeight, 3]];
+
+  const floor = barbell ? 45 : step;
+  const sets = [];
+  for (const [w, reps] of scheme) {
+    const weight = Math.max(floor, r(w));
+    if (weight >= workWeight) continue;
+    if (sets.length && weight <= sets[sets.length - 1].weight) continue;
+    if (barbell && weight === 45 && workWeight < 115 && !tm) continue; // light bar work: skip the empty-bar set
+    sets.push({ weight, reps, pct: Math.round((weight / workWeight) * 100) });
+  }
+  const note = warm
+    ? "These muscles are already warm from earlier lifts, so one easy feeder set is enough."
+    : "Rest 45–60 seconds between warm-up sets and about 2 minutes before your first working set. They should all feel easy.";
+  return { sets, note };
 }
 
 // ---------- stretching (after training or on rest days) ----------
