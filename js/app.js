@@ -4,6 +4,7 @@ import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, s
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
 import { APP_VERSION } from "./version.js";
+import { RAISE, mobilityFor, rampSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP } from "./recovery.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
@@ -24,7 +25,7 @@ const ui = { tab: location.hash.slice(1) || "today", date: dateKey(), chartEx: n
 
 const SUBS = {
   food: [["menu", "Menu"], ["log", "Log"], ["recipes", "Find recipes"]],
-  train: [["workout", "Workout"], ["progress", "Progress"], ["programs", "Programs"]],
+  train: [["workout", "Workout"], ["progress", "Progress"], ["programs", "Programs"], ["recovery", "Recovery"]],
   faith: [["today", "Today"], ["pray", "Pray"], ["ledger", "Ledger"]],
 };
 const view = document.getElementById("view");
@@ -759,6 +760,136 @@ function volumeCard(s, key) {
     </section>`;
 }
 
+// ---------- warm-up, stretching, sauna ----------
+
+const KIND_LABEL = { lower: "lower body", upper: "upper body", full: "full body" };
+
+function evidenceList(items) {
+  return html`<ul class="evidence">${items.map((e) => html`<li>${e.claim} <span class="sub-line">${e.url ? html`<a href="${e.url}" target="_blank" rel="noopener">${e.source} ↗</a>` : e.source}</span></li>`)}</ul>`;
+}
+
+function moveList(moves) {
+  return html`<ul class="moves">${moves.map(([name, dose, cue]) => html`<li><div class="move-top"><strong>${name}</strong><span class="move-dose">${dose}</span></div><span class="sub-line">${cue}</span></li>`)}</ul>`;
+}
+
+// The first lift of the day and the weight it's prescribed at, for ramp-up sets.
+function firstLift(s, w, key, order, exById) {
+  const id = order[0];
+  const ex = id && exById[id];
+  if (!ex) return null;
+  const rxItem = w.plan?.items?.find((i) => i.exId === id);
+  let weight, reps;
+  if (rxItem?.detail) {
+    const main = rxItem.detail.filter((d) => d.label && !/BBB/.test(d.label));
+    weight = Math.max(...main.map((d) => d.weight));
+    reps = main[main.length - 1]?.reps || 5;
+  } else {
+    const exRx = rxItem ? { ...ex, repMin: rxItem.repMin, repMax: rxItem.repMax, sets: rxItem.sets } : ex;
+    const sug = suggestNext(exRx, s.workouts, key, rxOf(rxItem) || undefined, s.baselines?.[id]);
+    weight = sug.weight;
+    reps = rxItem?.repMin ?? ex.repMin;
+  }
+  const equipment = howOf(ex)?.equipment || "";
+  return { ex, weight, reps, barbell: /barbell|smith/i.test(equipment) };
+}
+
+function warmupCard(s, w, key, order, exById) {
+  const exs = order.map((id) => exById[id]).filter(Boolean);
+  const kind = dayKind(exs);
+  const lift = firstLift(s, w, key, order, exById);
+  const ramp = lift ? rampSets(lift.weight, lift.reps, lift.barbell) : [];
+  const started = w.sets.length > 0;
+  return html`
+    <details class="card warmup" ${started ? "" : "open"}>
+      <summary class="card-summary"><span>Warm-up</span><span class="sec-meta">about 10 min · ${KIND_LABEL[kind]}</span></summary>
+      <ol class="warm-steps">
+        <li><span class="eyebrow">1 · Raise</span><div class="move-top"><strong>${RAISE.name}</strong><span class="move-dose">${RAISE.dose}</span></div><span class="sub-line">${RAISE.cue}</span></li>
+        <li><span class="eyebrow">2 · Mobilize</span>${moveList(mobilityFor(kind))}</li>
+        <li><span class="eyebrow">3 · Ramp up${lift ? `: ${lift.ex.name}` : ""}</span>
+          ${ramp.length ? html`
+            <table class="table ramp"><tr><th>Set</th><th>Weight</th><th>Reps</th></tr>
+              ${ramp.map((r, i) => html`<tr><td>${i + 1}</td><td>${r.weight} lb</td><td>${r.reps}</td></tr>`)}</table>
+            <p class="hint">Rest about 60 seconds between. Then start your working sets at ${lift.weight} lb. Fewer reps as the weight climbs keeps you fresh.</p>`
+          : html`<p class="hint">${lift ? "Do 2–3 light sets of your first exercise, adding weight each set and dropping reps (8, 5, 3), before your working sets." : "Add or load today's exercises and your ramp-up sets appear here."}</p>`}
+        </li>
+      </ol>
+      <details><summary>Why warm up this way</summary>${evidenceList(WARMUP_EVIDENCE)}</details>
+    </details>`;
+}
+
+function cooldownCard(kind) {
+  return html`
+    <details class="card">
+      <summary class="card-summary"><span>Cool-down stretch</span><span class="sec-meta">5–8 min</span></summary>
+      <p class="hint">Right after training, or any time on a rest day. Ease into each stretch: mild tension, never pain. Breathe slowly.</p>
+      ${moveList(stretchesFor(kind))}
+      ${moveList([BREATHING])}
+    </details>`;
+}
+
+function recoveryView(s, key) {
+  const sauna = s.profile.sauna || {};
+  const weight = latestWeight(s.weights) || s.profile.weightLb;
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Stretching routine</h2><span class="sec-meta">10–12 min</span></div>
+      <p class="hint">Do this after training or on rest days, ideally 3–5 times a week. Hold each stretch 30 seconds, twice. It keeps hips, shoulders and ankles moving well under heavy loads.</p>
+      <h3 class="entry-title">Lower body</h3>${moveList(STRETCHES.lower)}
+      <h3 class="entry-title">Upper body</h3>${moveList(STRETCHES.upper)}
+      <h3 class="entry-title">Finish</h3>${moveList([BREATHING])}
+      <details><summary>What stretching does (and doesn't do)</summary>${evidenceList(STRETCH_EVIDENCE)}</details>
+    </section>
+    ${sauna.enabled ? saunaCard(s, sauna, weight) : saunaOptIn(sauna)}`;
+}
+
+function saunaOptIn(sauna) {
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Sauna</h2><span class="chip chip-new">optional</span></div>
+      <p class="hint">Regular sauna use is linked to better heart health and can help you relax and recover. It's also hard on the body if you're dehydrated or have certain conditions, so it's off until you check these.</p>
+      <h3 class="entry-title">Skip the sauna, or ask your doctor first, if:</h3>
+      <ul class="status-list">${SAUNA_AVOID.map((x) => html`<li>${x}</li>`)}</ul>
+      <form data-form="sauna-on" class="grid-form">
+        <label class="span2">Your sauna experience<select name="level">${Object.entries(SAUNA_LEVELS).map(([k, v]) => html`<option value="${k}" ${sauna.level === k ? "selected" : ""}>${v.label}</option>`)}</select></label>
+        <label class="check span2"><input type="checkbox" name="ack" required> I've read this list. None of it applies to me, or my doctor has cleared me.</label>
+        <button class="btn span2" type="submit">Turn on sauna guidance</button>
+      </form>
+    </section>`;
+}
+
+function saunaCard(s, sauna, weight) {
+  const plan = saunaPlan(sauna.level, weight);
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Your sauna plan</h2><span class="sec-meta">${plan.label}</span></div>
+      <div class="stats stats-3">
+        ${stat("Per round", plan.time, plan.rounds.split(",")[0])}
+        ${stat("How often", "2–4×", "per week")}
+        ${stat("Sweat limit", `${plan.limitLb} lb`, "1% of body weight")}
+      </div>
+      <dl class="pairs">
+        <dt>Heat</dt><dd>${plan.temp}</dd>
+        <dt>Rounds</dt><dd>${plan.rounds}. ${plan.notes}</dd>
+        <dt>When</dt><dd>${plan.timing}</dd>
+        <dt>Before</dt><dd>${plan.before}</dd>
+        <dt>Weigh</dt><dd>${plan.limitText}</dd>
+        <dt>After</dt><dd>${plan.replaceText}</dd>
+        <dt>Note</dt><dd>${plan.estimateText}</dd>
+      </dl>
+      <p class="target target-deload"><span class="target-label">Get out right away if you feel</span> ${SAUNA_STOP.join(", ").toLowerCase()}. Cool down slowly, sit, and drink water.</p>
+      <details><summary>Why it's good for you</summary>
+        ${evidenceList(SAUNA_BENEFITS)}
+        <p class="hint">Session length is based on your heat experience, not body weight; research doesn't support weight-based timing. Your weight sets your personal sweat-loss limit and how much to drink.</p>
+      </details>
+      <details><summary>When not to use the sauna</summary><ul class="status-list">${SAUNA_AVOID.map((x) => html`<li>${x}</li>`)}</ul></details>
+      <form data-form="sauna-level" class="inline">
+        <label class="grow">Experience<select name="level">${Object.entries(SAUNA_LEVELS).map(([k, v]) => html`<option value="${k}" ${sauna.level === k ? "selected" : ""}>${v.label}</option>`)}</select></label>
+        <button class="btn" type="submit">Update</button>
+      </form>
+      <button type="button" class="btn ghost full" data-action="sauna-off">Turn off sauna guidance</button>
+    </section>`;
+}
+
 function renderTrain(s) {
   const key = ui.date;
   const w = workoutFor(s, key);
@@ -766,6 +897,8 @@ function renderTrain(s) {
   const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])].filter((id) => exById[id]);
   ui.chartEx ??= order[0] || s.exercises[0]?.id;
   const sub = ui.sub.train;
+
+  if (sub === "recovery") return recoveryView(s, key);
 
   if (sub === "progress") {
     return html`
@@ -823,6 +956,8 @@ function renderTrain(s) {
         <p class="hint">Train freestyle below, or pick a proven program and the app will load each day for you.</p>
       </section>`}
 
+    ${warmupCard(s, w, key, order, exById)}
+
     <section class="card offer">
       <div class="sec-head"><h2>Offer it up</h2><span class="sec-meta">1 Cor 9:27</span></div>
       <form class="inline" data-form="intention">
@@ -852,7 +987,9 @@ function renderTrain(s) {
       </details>` : ""}
     </section>
 
-    ${workoutReview(s, w, key, order, exById)}`;
+    ${workoutReview(s, w, key, order, exById)}
+    ${w.sets.length ? cooldownCard(dayKind(order.map((id) => exById[id]).filter(Boolean))) : ""}
+    ${w.sets.length && s.profile.sauna?.enabled ? html`<p class="hint sauna-hint">Sauna today: ${saunaPlan(s.profile.sauna.level, latestWeight(s.weights) || s.profile.weightLb).time}, about 16 oz of water first. <button type="button" class="link-btn inline-link" data-sub-go="recovery">Plan</button></p>` : ""}`;
 }
 
 // ---------- type or paste a whole workout ----------
@@ -1896,6 +2033,12 @@ const forms = {
     });
     toast(`Next workout: ${PROGRAMS[getState().program.id].plan[day].name}`);
   },
+  "sauna-on"(d) {
+    if (!d.ack) return toast("Please read and check the safety list first");
+    update((st) => { st.profile.sauna = { enabled: true, level: d.level, ackDate: new Date().toISOString() }; });
+    toast("Sauna guidance on");
+  },
+  "sauna-level"(d) { update((st) => { st.profile.sauna = { ...st.profile.sauna, level: d.level }; }); },
   prefs(d) {
     update((s) => { s.profile.diet = d.diet; s.profile.meatlessFridays = !!d.meatlessFridays; s.profile.preworkout = !!d.preworkout; });
     toast("Preferences saved");
@@ -2103,6 +2246,7 @@ const actions = {
     update((st) => { delete st.settings.pinHash; delete st.settings.pinSalt; });
     toast("PIN removed");
   },
+  "sauna-off"() { update((st) => { st.profile.sauna = { ...st.profile.sauna, enabled: false }; }); },
   "remove-key"() {
     if (!confirm("Remove your Anthropic API key from this phone? AI features will turn off.")) return;
     update((st) => { st.settings.apiKey = ""; });

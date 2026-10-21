@@ -7,7 +7,7 @@ const SHELL = [
   "./", "index.html", "styles.css", "manifest.webmanifest",
   "icons/icon.svg", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png",
   "js/app.js", "js/version.js", "js/store.js", "js/nutrition.js", "js/lifts.js", "js/liturgy.js", "js/chart.js", "js/reflect.js",
-  "js/ai.js", "js/recipes.js", "js/mealplan.js", "js/programs.js", "js/exercise-db.js", "js/recipe-steps.js", "js/workout-text.js",
+  "js/ai.js", "js/recipes.js", "js/mealplan.js", "js/programs.js", "js/exercise-db.js", "js/recipe-steps.js", "js/workout-text.js", "js/recovery.js",
 ];
 
 self.addEventListener("install", (e) => {

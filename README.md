@@ -58,6 +58,11 @@ Pick one and the app loads each day's workout, with sets, reps, and rest times:
 - **A workout review** shows how many lifts progressed, held or went down, your PRs, total volume, and the exact target for next time.
 - **Ask the coach** (needs your API key): ask a question about any exercise, with your recent sets as context.
 
+**Warm-up, stretching and sauna** (Train → Workout and Train → Recovery):
+- A warm-up at the top of every workout, using the RAMP method: 5 minutes of easy cardio, dynamic mobility for that day's joints (lower, upper or full body), and ramp-up sets for your first lift calculated from today's working weight. Long static holds are left out before lifting, since they can slightly reduce strength.
+- A cool-down stretch after training, plus a full 10-minute stretching routine (2 × 30 s holds) for rest days.
+- **Optional sauna guidance**, off until you read and accept a safety list. Session length is based on your heat experience, not body weight; your body weight sets a personal sweat-loss limit (1% of body weight) and how much to drink. Benefits, warning signs and research sources are shown in the app.
+
 **Built to prevent stalls:**
 - Every exercise progresses on its own rep range.
 - After two missed sessions, the app drops the weight 10% so you can build back up.
