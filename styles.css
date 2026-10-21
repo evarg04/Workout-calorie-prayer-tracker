@@ -563,3 +563,10 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .warm-list strong { font: 700 18px/1 var(--f-num); }
 .warm-list .sub-line { display: inline; margin-left: 6px; }
 .warm-list input:checked + span { opacity: 0.5; text-decoration: line-through; }
+
+/* ---------- substitutes ---------- */
+.sub-list { list-style: none; padding: 0; margin: 6px 0; }
+.sub-list li { padding: 8px 0; border-top: 1px solid var(--line); }
+.sub-list li:first-child { border-top: 0; }
+.sub-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.swaps { margin-top: 8px; }
