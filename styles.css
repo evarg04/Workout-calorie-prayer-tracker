@@ -453,3 +453,9 @@ ol.prayer { padding-left: 22px; }
   background: var(--head-bg); color: var(--head-ink); padding: 10px 16px; border-radius: 4px;
   font: 600 14px/1 var(--f-num); letter-spacing: 0.06em; text-transform: uppercase;
 }
+
+/* ---------- label scan ---------- */
+.file-btn { width: 100%; margin-top: 6px; }
+.scan-row { display: flex; gap: 12px; align-items: flex-start; }
+.scan-thumb { width: 72px; height: 96px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); flex: none; background: var(--surface-2); }
+.scan-total { margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: 4px; font: 600 15px/1.3 var(--f-num); font-variant-numeric: tabular-nums; }
