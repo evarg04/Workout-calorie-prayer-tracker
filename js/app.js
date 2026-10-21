@@ -4,7 +4,7 @@ import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, s
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE, substitutesFor } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
 import { APP_VERSION } from "./version.js";
-import { RAISE, mobilityFor, warmupSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP, AB_ROUTINES, AB_NOTES, CARDIO_TYPES, CARDIO_OPTIONS, caloriesBurned } from "./recovery.js";
+import { RAISE, mobilityFor, warmupSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP, SAUNA_MAX_MIN, AB_ROUTINES, AB_NOTES, CARDIO_TYPES, CARDIO_OPTIONS, caloriesBurned } from "./recovery.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
@@ -838,13 +838,13 @@ function saunaCard(s, sauna, weight) {
     <section class="card">
       <div class="sec-head"><h2>Your sauna plan</h2><span class="sec-meta">${plan.label}</span></div>
       <div class="stats stats-3">
-        ${stat("Per round", plan.time, plan.rounds.split(",")[0])}
+        ${stat("Session", plan.time, "1 round only")}
         ${stat("How often", "2–4×", "per week")}
         ${stat("Sweat limit", `${plan.limitLb} lb`, "1% of body weight")}
       </div>
       <dl class="pairs">
         <dt>Heat</dt><dd>${plan.temp}</dd>
-        <dt>Rounds</dt><dd>${plan.rounds}. ${plan.notes}</dd>
+        <dt>Limit</dt><dd><strong>${plan.rule}</strong> ${plan.notes}</dd>
         <dt>When</dt><dd>${plan.timing}</dd>
         <dt>Before</dt><dd>${plan.before}</dd>
         <dt>Weigh</dt><dd>${plan.limitText}</dd>
@@ -1181,11 +1181,12 @@ function saunaMini(s, w, weight) {
   const plan = saunaPlan(s.profile.sauna.level, weight);
   return html`
     <section class="card" id="sauna-card">
-      <div class="sec-head"><h2>Sauna</h2><span class="sec-meta">${plan.time} · ${plan.rounds.split(",")[0]}</span></div>
+      <div class="sec-head"><h2>Sauna</h2><span class="sec-meta">${plan.time} · 1 round</span></div>
+      <p class="line"><strong>${plan.rule}</strong></p>
       <p class="line">Drink about 16 oz of water first. Weigh before and after; keep the loss under ${plan.limitLb} lb.</p>
       <p class="target target-deload"><span class="target-label">Get out right away if you feel</span> ${SAUNA_STOP.join(", ").toLowerCase()}.</p>
       <form data-form="log-sauna" class="inline">
-        <label class="grow">Minutes in the sauna<input name="min" type="number" inputmode="numeric" min="1" max="60" value="${w.sauna?.min || ""}"></label>
+        <label class="grow">Minutes in the sauna (15 max)<input name="min" type="number" inputmode="numeric" min="1" max="60" value="${w.sauna?.min || ""}"></label>
         <button class="btn" type="submit">Log</button>
       </form>
       <button type="button" class="link-btn" data-sub-go="recovery">Full sauna plan</button>
@@ -2313,6 +2314,7 @@ const forms = {
     const min = Math.max(0, Math.min(60, +d.min || 0));
     update((st) => { ensureWorkout(st, ui.date).sauna = min ? { min } : undefined; });
     if (!min) return toast("Cleared");
+    if (min > SAUNA_MAX_MIN) toast(`That's over the ${SAUNA_MAX_MIN}-minute limit. Next time get out at ${SAUNA_MAX_MIN} or sooner, and drink extra water now.`);
     update((st) => { ensureWorkout(st, ui.date).wrapped = true; });
     showSummary();
   },

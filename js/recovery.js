@@ -111,10 +111,14 @@ export const STRETCH_EVIDENCE = [
 
 // ---------- sauna (opt-in) ----------
 
+// One round only, and never more than 15 minutes. Longer or repeated rounds add heat
+// strain and fluid loss with little extra benefit, and right after training you're
+// already low on fluid. The app keeps everyone on the safe side of that.
+export const SAUNA_MAX_MIN = 15;
 export const SAUNA_LEVELS = {
-  new: { label: "New to sauna", time: "5–10 min", rounds: "1 round", per: [5, 10], notes: "Build up over 2–3 weeks. Leave at the first sign of feeling unwell, even if your time isn't up." },
-  regular: { label: "A few times a month", time: "10–15 min", rounds: "1–2 rounds, 5–10 min cooling between", per: [10, 15], notes: "Sit on a lower bench if it feels too hot." },
-  experienced: { label: "Several times a week", time: "15–20 min", rounds: "2–3 rounds, 5–10 min cooling between", per: [15, 20], notes: "Keep each round at 20 minutes or less, and total heat time under about 45 minutes." },
+  new: { label: "New to sauna", time: "5–10 min", rounds: "1 round", per: [5, 10], notes: "Build up slowly over 2–3 weeks. Leave at the first sign of feeling unwell, even if your time isn't up." },
+  regular: { label: "A few times a month", time: "10–15 min", rounds: "1 round", per: [10, 15], notes: "Sit on a lower bench if it feels too hot. Leave early if you feel unwell." },
+  experienced: { label: "Several times a week", time: "Up to 15 min", rounds: "1 round", per: [12, 15], notes: "Even if you're used to the heat, stop at 15 minutes. More time or extra rounds add strain without adding much benefit." },
 };
 
 export function saunaPlan(level, weightLb) {
@@ -125,21 +129,22 @@ export function saunaPlan(level, weightLb) {
   const limitLb = Math.round(w * 0.01 * 10) / 10;
   return {
     ...L,
-    temp: "Traditional dry sauna 174–194°F (80–90°C). Infrared runs cooler (120–140°F), so sessions can be a bit longer: 20–30 min.",
+    temp: "Traditional dry sauna 174–194°F (80–90°C). Infrared runs cooler (120–140°F), but keep the same 15-minute limit.",
+    rule: `One round, ${SAUNA_MAX_MIN} minutes at most, every time. After a workout you're already low on fluid, so the shorter end is the safer choice.`,
     frequency: "2–4 times a week is plenty; the long-term heart-health associations were seen at 4–7 times a week.",
     timing: "Best after training or on rest days, not right before lifting (it can leave you tired and dehydrated).",
     before: `Drink about 16 oz (500 mL) of water in the hour before.`,
     limitLb,
     limitText: `Weigh yourself before and after. Keep the loss under ${limitLb} lb (1% of your ${Math.round(w)} lb). If you lose more, shorten your next session.`,
     replaceText: `Afterward, drink about 20–24 oz of fluid for every pound lost, ideally with some sodium (a pinch of salt or a sports drink), over the next 1–2 hours.`,
-    estimateText: `Typical sweat loss is roughly 1 lb per 15–20 minutes in a hot sauna, so at ${Math.round(w)} lb you'll usually stay under your limit within the times above. Hot days, a hard workout or a cut make it easier to over-lose, so weigh in.`,
+    estimateText: `Most people sweat out roughly half a pound to a pound in a 15-minute session, so at ${Math.round(w)} lb you'll usually stay under your limit. Hot days, a hard workout or a cut make it easier to over-lose, so weigh in.`,
   };
 }
 
 export const SAUNA_BENEFITS = [
   { claim: "Men who used a sauna 4–7 times a week had lower rates of cardiovascular death than those who went once a week. This is observational: an association, not proof.", source: "Laukkanen et al., 2015, JAMA Internal Medicine", url: "https://pubmed.ncbi.nlm.nih.gov/?term=Association%20between%20sauna%20bathing%20and%20fatal%20cardiovascular%20and%20all-cause%20mortality%20events" },
   { claim: "A single session lowers blood pressure and improves arterial stiffness for a while afterward, much like light exercise.", source: "Laukkanen et al., 2018, J Human Hypertension", url: "https://pubmed.ncbi.nlm.nih.gov/?term=Acute%20effects%20of%20sauna%20bathing%20on%20cardiovascular%20function" },
-  { claim: "About 30 minutes of post-exercise sauna, roughly every other day for 3 weeks, improved run time to exhaustion in competitive male runners (likely via increased plasma volume).", source: "Scoon et al., 2007, J Sci Med Sport", url: "https://pubmed.ncbi.nlm.nih.gov/?term=Effect%20of%20post-exercise%20sauna%20bathing%20on%20the%20endurance%20performance%20of%20competitive%20male%20runners" },
+  { claim: "Post-exercise sauna, roughly every other day for 3 weeks, improved run time to exhaustion in competitive male runners (likely via increased plasma volume). That study used about 30 minutes in trained athletes; this app caps sessions at 15 minutes to stay safe.", source: "Scoon et al., 2007, J Sci Med Sport", url: "https://pubmed.ncbi.nlm.nih.gov/?term=Effect%20of%20post-exercise%20sauna%20bathing%20on%20the%20endurance%20performance%20of%20competitive%20male%20runners" },
   { claim: "Heat exposure helps people relax, and many sleep better; evidence for sleep is mostly self-reported.", source: "Hussain & Cohen, 2018, Evid Based Complement Alternat Med (review)", url: "https://pubmed.ncbi.nlm.nih.gov/?term=Clinical%20effects%20of%20regular%20dry%20sauna%20bathing%3A%20a%20systematic%20review" },
 ];
 
