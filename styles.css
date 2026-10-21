@@ -469,3 +469,12 @@ ol.prayer { padding-left: 22px; }
 .recipe-steps { padding-left: 22px; }
 .recipe-steps li { margin: 8px 0; line-height: 1.5; font-size: 15px; }
 .recipe-steps li::marker { font: 700 15px var(--f-num); color: var(--accent); }
+
+/* ---------- typed workout ---------- */
+.parsed { list-style: none; padding: 0; margin: 0 0 6px; }
+.parsed-row { border-top: 1px solid var(--line); padding: 10px 0; }
+.parsed-row:first-child { border-top: 0; padding-top: 0; }
+.parsed-top { display: flex; gap: 8px; align-items: center; }
+.parsed-top select { flex: 1; font-weight: 600; }
+.parsed-sets { font: 500 18px/1.2 var(--f-num); margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+.parsed-sets strong { font-size: 22px; }

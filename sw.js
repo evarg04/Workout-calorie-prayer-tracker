@@ -1,9 +1,9 @@
 // Offline support: cache the app shell; network-first so updates arrive when online.
-const CACHE = "temple-v7";
+const CACHE = "temple-v8";
 const SHELL = [
   "./", "index.html", "styles.css", "manifest.webmanifest", "icons/icon.svg",
   "js/app.js", "js/store.js", "js/nutrition.js", "js/lifts.js", "js/liturgy.js", "js/chart.js", "js/reflect.js",
-  "js/ai.js", "js/recipes.js", "js/mealplan.js", "js/programs.js", "js/exercise-db.js", "js/recipe-steps.js",
+  "js/ai.js", "js/recipes.js", "js/mealplan.js", "js/programs.js", "js/exercise-db.js", "js/recipe-steps.js", "js/workout-text.js",
 ];
 
 self.addEventListener("install", (e) => {
