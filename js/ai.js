@@ -108,3 +108,70 @@ Prefer popular TikTok recipes when they fit; reputable recipe sites are fine too
     }))
     .filter((r) => r.per.cal > 0);
 }
+
+const EXERCISE_SYSTEM = `You identify gym exercises for a strength-training app and explain exactly how they are performed.
+Use web search to find authoritative sources (e.g. ExRx.net, NSCA, ACE, reputable coaches or university sites, well-known strength coaches). Only cite URLs you actually found.
+If the name is ambiguous, pick the most common meaning and list the other meanings in "alternatives". If it is not a real exercise, set "found": false.
+Reply with one short sentence, then exactly one \`\`\`json code block with:
+{"found": boolean, "name": string, "aliases": [string], "description": string,
+ "kind": "upper" | "lower",
+ "muscle": one of ["chest","back","shoulders","biceps","triceps","quads","hamstrings","glutes","calves","abs"],
+ "secondary": [string], "equipment": string,
+ "repMin": number, "repMax": number, "increment": number,
+ "steps": [string], "cues": [string], "mistakes": [string],
+ "alternatives": [string],
+ "sources": [{"name": string, "url": string}]}
+repMin/repMax: a sensible hypertrophy range for this exercise. increment: smallest practical weight jump in lb (0 for bodyweight).`;
+
+const MUSCLE_SET = new Set(["chest", "back", "shoulders", "biceps", "triceps", "quads", "hamstrings", "glutes", "calves", "abs"]);
+
+function parseJsonBlock(text) {
+  const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  try {
+    return JSON.parse(match ? match[1] : text);
+  } catch {
+    throw new Error("Couldn't read the answer that came back. Try again.");
+  }
+}
+
+export async function lookupExercise({ apiKey, query }) {
+  const text = await ask({
+    apiKey, system: EXERCISE_SYSTEM,
+    content: `The user typed this exercise into their workout log: "${query}". Identify it and explain how it is performed.`,
+    tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }],
+  });
+  const r = parseJsonBlock(text);
+  if (!r || !r.found || !r.name) return { found: false, alternatives: (r?.alternatives || []).map(String).slice(0, 5) };
+  const list = (x, n = 8) => (Array.isArray(x) ? x.map(String).slice(0, n) : []);
+  const repMin = Math.max(1, Math.round(+r.repMin || 8));
+  return {
+    found: true,
+    name: String(r.name).slice(0, 80),
+    aliases: list(r.aliases),
+    description: String(r.description || "").slice(0, 400),
+    kind: r.kind === "lower" ? "lower" : "upper",
+    muscle: MUSCLE_SET.has(r.muscle) ? r.muscle : "back",
+    increment: Math.max(0, +r.increment || 0),
+    repMin,
+    repMax: Math.max(repMin, Math.round(+r.repMax || 12)),
+    how: {
+      steps: list(r.steps), cues: list(r.cues, 5), mistakes: list(r.mistakes, 5),
+      equipment: String(r.equipment || "").slice(0, 80), secondary: list(r.secondary, 5),
+      sources: (Array.isArray(r.sources) ? r.sources : [])
+        .filter((x) => x && /^https?:\/\//.test(x.url || ""))
+        .slice(0, 4).map((x) => ({ name: String(x.name || new URL(x.url).hostname).slice(0, 60), url: x.url })),
+    },
+    alternatives: list(r.alternatives, 5),
+  };
+}
+
+const COACH_SYSTEM = `You are an experienced, evidence-based strength coach inside a workout-tracking app.
+Answer the lifter's question about one exercise in under 150 words of plain Markdown: direct, practical, safe. Use the recent sets given for context when relevant (progression, rep ranges, effort).
+If the question suggests pain or injury, advise stopping that movement and seeing a qualified professional.`;
+
+export async function askCoach({ apiKey, exercise, question, recent }) {
+  return ask({
+    apiKey, system: COACH_SYSTEM, effort: "low",
+    content: `Exercise: ${exercise}\nRecent sessions (newest first): ${recent || "none logged"}\n\nQuestion: ${question}`,
+  });
+}

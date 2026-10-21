@@ -43,6 +43,18 @@ Pick one and the app loads each day's workout, with sets, reps, and rest times:
 | **5/3/1 Boring But Big** (Jim Wendler) | 4 | Long-term strength. Training-max waves with a built-in deload week |
 | **Novice Linear Progression** (Starting Strength model) | 3 | New lifters. Add weight every session |
 
+**Type any exercise.** Type it the way you say it ("incline db press", "RDL", "skull crushers", typos too):
+- About 55 exercises are built in, each with setup, steps, cues and common mistakes.
+- If a name could mean more than one exercise (like "leg curl"), the app asks which one you mean.
+- If it doesn't know the exercise, it looks it up online (needs your API key) and shows a description, how to perform it, and sources. You confirm or correct it before it's added.
+
+**Coach feedback on every set and workout:**
+- **Each set** is compared to the same set last session: progressed ✓, matched, or down. It's also checked against your rep range ("too light, add 5 lb" or "too heavy, drop ~10%").
+- **Effort:** you can log RIR (reps in reserve). Sets with 4+ reps left are flagged as too easy, and failure on early sets of big lifts gets a warning.
+- **Each exercise** gets a verdict comparing its estimated 1RM and volume to last session.
+- **A workout review** shows how many lifts progressed, held or went down, your PRs, total volume, and the exact target for next time.
+- **Ask the coach** (needs your API key): ask a question about any exercise, with your recent sets as context.
+
 **Built to prevent stalls:**
 - Every exercise progresses on its own rep range.
 - After two missed sessions, the app drops the weight 10% so you can build back up.

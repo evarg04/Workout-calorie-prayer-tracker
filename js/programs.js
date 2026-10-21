@@ -2,29 +2,10 @@
 // Each day lists exercises as [name, sets, repMin, repMax, restSeconds, note].
 
 import { addDays } from "./store.js";
+import { EXERCISES } from "./exercise-db.js";
 
-// Library metadata for every exercise a program can add: kind, primary muscle, lb increment.
-export const CATALOG = {
-  "Back Squat": ["lower", "quads", 10], "Front Squat": ["lower", "quads", 5], "Leg Press": ["lower", "quads", 20],
-  "Hack Squat": ["lower", "quads", 10], "Bulgarian Split Squat": ["lower", "quads", 5], "Leg Extension": ["lower", "quads", 5],
-  "Deadlift": ["lower", "hamstrings", 10], "Romanian Deadlift": ["lower", "hamstrings", 10],
-  "Lying Leg Curl": ["lower", "hamstrings", 5], "Seated Leg Curl": ["lower", "hamstrings", 5], "Hip Thrust": ["lower", "glutes", 10],
-  "Standing Calf Raise": ["lower", "calves", 10], "Seated Calf Raise": ["lower", "calves", 10],
-  "Bench Press": ["upper", "chest", 5], "Incline Barbell Press": ["upper", "chest", 5], "Flat Dumbbell Press": ["upper", "chest", 5],
-  "Incline Dumbbell Press": ["upper", "chest", 5], "Dips": ["upper", "chest", 5], "Pec Deck Fly": ["upper", "chest", 5],
-  "Cable Crossover": ["upper", "chest", 5],
-  "Barbell Row": ["upper", "back", 5], "Chest-Supported Row": ["upper", "back", 5], "Seated Cable Row": ["upper", "back", 5],
-  "Lat Pulldown": ["upper", "back", 5], "Pull-up (added weight)": ["upper", "back", 5], "Chin-up": ["upper", "back", 5],
-  "Straight-Arm Pulldown": ["upper", "back", 5],
-  "Overhead Press": ["upper", "shoulders", 5], "Seated Dumbbell Shoulder Press": ["upper", "shoulders", 5],
-  "Dumbbell Lateral Raise": ["upper", "shoulders", 2.5], "Cable Lateral Raise": ["upper", "shoulders", 2.5],
-  "Rear Delt Fly": ["upper", "shoulders", 2.5], "Face Pull": ["upper", "shoulders", 5],
-  "Barbell Curl": ["upper", "biceps", 5], "Dumbbell Curl": ["upper", "biceps", 2.5], "Hammer Curl": ["upper", "biceps", 2.5],
-  "Cable Curl": ["upper", "biceps", 5], "Preacher Curl": ["upper", "biceps", 5],
-  "Triceps Rope Pushdown": ["upper", "triceps", 5], "Overhead Cable Triceps Extension": ["upper", "triceps", 5],
-  "Skull Crusher": ["upper", "triceps", 5],
-  "Hanging Leg Raise": ["upper", "abs", 5], "Cable Crunch": ["upper", "abs", 5],
-};
+// Library metadata for every exercise a program can add: [kind, primary muscle, lb increment].
+export const CATALOG = Object.fromEntries(EXERCISES.map((e) => [e.name, [e.kind, e.muscle, e.increment]]));
 
 export const MUSCLES = ["chest", "back", "shoulders", "biceps", "triceps", "quads", "hamstrings", "glutes", "calves", "abs"];
 

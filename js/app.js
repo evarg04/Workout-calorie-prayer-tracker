@@ -1,13 +1,14 @@
 import { getState, update, save, subscribe, uid, dateKey, addDays, parseKey, exportJSON, importJSON } from "./store.js";
 import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weeklyAdherence, paceVerdict, ACTIVITY_LEVELS } from "./nutrition.js";
-import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary } from "./lifts.js";
+import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, setFeedback, exerciseVerdict } from "./lifts.js";
+import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE } from "./exercise-db.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, fetchGospel, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
 import { DIETS } from "./recipes.js";
 import { SLOTS, buildPlan, swapSlot, hydrate, planTotals, recipePool, scaled, groceryList } from "./mealplan.js";
 import { PROGRAMS, CATALOG, MUSCLES, todaysSession, weeklyVolume, round5 } from "./programs.js";
-import { findWebRecipes } from "./ai.js";
+import { findWebRecipes, lookupExercise, askCoach } from "./ai.js";
 
 // ---------- tiny templating: interpolations are escaped unless wrapped in raw() ----------
 const RAW = Symbol("raw");
@@ -16,7 +17,7 @@ const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const val = (v) => (Array.isArray(v) ? v.map(val).join("") : v && v[RAW] !== undefined ? v[RAW] : v === false || v == null ? "" : esc(v));
 const html = (strings, ...vals) => raw(strings.reduce((out, s, i) => out + s + (i < vals.length ? val(vals[i]) : ""), ""));
 
-const ui = { tab: location.hash.slice(1) || "today", date: dateKey(), chartEx: null, gospel: {}, busy: {} };
+const ui = { tab: location.hash.slice(1) || "today", date: dateKey(), chartEx: null, gospel: {}, busy: {}, exQuery: "", exPick: null, exLookup: null, coach: {} };
 const view = document.getElementById("view");
 const round = (n) => Math.round(n);
 const fmtDate = (k, opts = { weekday: "short", month: "short", day: "numeric" }) => parseKey(k).toLocaleDateString(undefined, opts);
@@ -461,12 +462,21 @@ function renderTrain(s) {
 
     ${order.map((id) => exerciseCard(s, exById[id], w, key))}
 
+    ${workoutReview(s, w, key, order, exById)}
+
     <section class="card">
       <h2>Add exercise</h2>
-      <form class="inline" data-form="add-ex">
-        <label class="grow">Exercise<select name="exId">${s.exercises.filter((e) => !order.includes(e.id)).map((e) => html`<option value="${e.id}">${e.name}</option>`)}</select></label>
-        <button class="btn" type="submit">Add</button>
+      <form class="inline" data-form="ex-search">
+        <label class="grow">Type any exercise<input name="q" value="${ui.exQuery}" placeholder="e.g. incline db press, RDL, skull crushers" autocomplete="off" data-live="ex-query"></label>
+        <button class="btn" type="submit">Find</button>
       </form>
+      <div id="ex-results" aria-live="polite">${exResults(s)}</div>
+      <details><summary>Or pick from your library</summary>
+        <form class="inline" data-form="add-ex">
+          <label class="grow">Exercise<select name="exId">${s.exercises.filter((e) => !order.includes(e.id)).map((e) => html`<option value="${e.id}">${e.name}</option>`)}</select></label>
+          <button class="btn" type="submit">Add</button>
+        </form>
+      </details>
     </section>
 
     <section class="card">
@@ -497,6 +507,176 @@ function renderTrain(s) {
     ${volumeCard(s, key)}`;
 }
 
+// ---------- exercise recognition ----------
+
+function howOf(ex) {
+  return ex.how || exerciseInfo(ex.name)?.how || null;
+}
+
+function howBlock(how, open = false) {
+  if (!how) return "";
+  return html`
+    <details class="how" ${open ? "open" : ""}><summary>How to perform it</summary>
+      ${how.equipment ? html`<p class="small muted">Equipment: ${how.equipment}${how.secondary?.length ? ` · Also works: ${how.secondary.join(", ")}` : ""}</p>` : ""}
+      <ol class="steps">${(how.steps || []).map((x) => html`<li>${x}</li>`)}</ol>
+      ${how.cues?.length ? html`<p class="small"><strong>Cues:</strong></p><ul class="small">${how.cues.map((x) => html`<li>${x}</li>`)}</ul>` : ""}
+      ${how.mistakes?.length ? html`<p class="small"><strong>Avoid:</strong></p><ul class="small">${how.mistakes.map((x) => html`<li>${x}</li>`)}</ul>` : ""}
+      ${how.sources?.length ? html`<p class="tiny muted">Sources: ${how.sources.map((x, i) => html`${i ? " · " : ""}<a href="${x.url}" target="_blank" rel="noopener">${x.name} ↗</a>`)}</p>` : ""}
+    </details>`;
+}
+
+function exPreview(ex, label) {
+  const range = `${ex.repMin}–${ex.repMax} reps`;
+  return html`
+    <div class="ex-preview">
+      <div class="small muted">${label}</div>
+      <div class="menu-name">✓ ${ex.name}</div>
+      <div class="small muted">${cap(ex.muscle || "general")}${ex.secondary?.length ? ` + ${ex.secondary.join(", ")}` : ""} · ${ex.equipment || ex.how?.equipment || ""} · ${range}</div>
+      ${howBlock(ex.how || exerciseInfo(ex.name)?.how, true)}
+      <div class="row">
+        <button type="button" class="btn" data-action="add-known" data-name="${ex.name}">Add to today's workout</button>
+        <button type="button" class="btn ghost" data-action="ex-clear">Clear</button>
+      </div>
+    </div>`;
+}
+
+function lookupButton(s, q) {
+  return s.settings.apiKey
+    ? html`<button type="button" class="btn ghost" data-action="ex-lookup" data-q="${q}">🔎 Look up "${q}" online</button>`
+    : html`<p class="small muted">Add your Anthropic API key on the Me tab and the app will look up unknown exercises online (how to do it, cues, sources) for you to confirm. Or add it yourself in "Exercise library & rep ranges" below.</p>`;
+}
+
+function exResults(s) {
+  const q = ui.exQuery.trim();
+  const L = ui.exLookup;
+  if (L) {
+    if (L.loading) return html`<p class="muted">Looking up "${L.query}" online…</p>`;
+    if (L.error) return html`<p class="error">${L.error}</p>${lookupButton(s, L.query)}`;
+    const d = L.data;
+    if (!d.found) {
+      return html`<p>I couldn't identify "${L.query}" as an exercise.</p>
+        ${d.alternatives.length ? html`<p class="small">Did you mean:</p><div class="chips">${d.alternatives.map((a) => html`<button type="button" class="chip" data-action="ex-lookup" data-q="${a}">${a}</button>`)}</div>` : ""}
+        <p class="small muted">Try another name, or add it yourself in the exercise library below.</p>`;
+    }
+    return html`
+      <div class="ex-verify">
+        <p><strong>Is this the exercise you're doing?</strong></p>
+        <p class="small">${d.description}</p>
+        ${howBlock(d.how, true)}
+        <form data-form="confirm-ex" class="grid-form">
+          <label class="span2">Name<input name="name" value="${d.name}" required></label>
+          <label>Main muscle<select name="muscle">${MUSCLES.map((m) => html`<option value="${m}" ${m === d.muscle ? "selected" : ""}>${cap(m)}</option>`)}</select></label>
+          <label>Type<select name="kind"><option value="upper" ${d.kind === "upper" ? "selected" : ""}>Upper body</option><option value="lower" ${d.kind === "lower" ? "selected" : ""}>Lower body</option></select></label>
+          <label>Min reps<input name="repMin" type="number" min="1" value="${d.repMin}"></label>
+          <label>Max reps<input name="repMax" type="number" min="1" value="${d.repMax}"></label>
+          <label class="span2">Weight increment (lb)<input name="increment" type="number" min="0" step="0.5" value="${d.increment}"></label>
+          <button class="btn span2" type="submit">Yes, that's it. Add it</button>
+        </form>
+        ${d.alternatives.length ? html`<p class="small">Not quite? Maybe you meant:</p><div class="chips">${d.alternatives.map((a) => html`<button type="button" class="chip" data-action="ex-lookup" data-q="${a}">${a}</button>`)}</div>` : ""}
+        <button type="button" class="btn ghost" data-action="ex-clear">No, start over</button>
+      </div>`;
+  }
+  if (ui.exPick) {
+    const ex = exerciseInfo(ui.exPick) || s.exercises.find((e) => e.name === ui.exPick);
+    if (ex) return exPreview(ex, "You picked");
+  }
+  if (!q) return html`<p class="small muted">Type it the way you'd say it. Abbreviations and typos are fine.</p>`;
+  const matches = matchExercise(q, s.exercises);
+  const [top, second] = matches;
+  if (top && top.score >= MATCH_SURE && !(second && second.score > top.score - 0.05)) {
+    return html`${exPreview(top.ex, "Recognized")}
+      ${matches.length > 1 ? html`<p class="small muted">Not it? ${matches.slice(1, 4).map((m) => html`<button type="button" class="link-btn" data-action="ex-pick" data-name="${m.ex.name}">${m.ex.name}</button> `)}</p>` : ""}
+      ${lookupButton(s, q)}`;
+  }
+  if (top && top.score >= MATCH_MAYBE) {
+    return html`<p class="small"><strong>Which one do you mean?</strong></p>
+      <div class="chips">${matches.slice(0, 4).map((m) => html`<button type="button" class="chip" data-action="ex-pick" data-name="${m.ex.name}">${m.ex.name}</button>`)}</div>
+      <p class="small muted">None of these?</p>${lookupButton(s, q)}`;
+  }
+  return html`<p>I don't know "${q}" yet.</p>${lookupButton(s, q)}`;
+}
+
+async function startLookup(q) {
+  ui.exLookup = { query: q, loading: true };
+  ui.exPick = null;
+  render();
+  try {
+    ui.exLookup = { query: q, data: await lookupExercise({ apiKey: getState().settings.apiKey, query: q }) };
+  } catch (err) {
+    ui.exLookup = { query: q, error: err.message };
+  }
+  render();
+}
+
+function addToToday(st, exId) {
+  const w = ensureWorkout(st, ui.date);
+  if (!w.order.includes(exId)) w.order.push(exId);
+  ui.chartEx = exId;
+}
+
+// ---------- coach review ----------
+
+const FB_ICON = { good: "✅", ok: "➖", warn: "⚠️" };
+const VERDICT_ICON = { up: "⬆️", same: "➖", down: "⬇️", new: "🆕" };
+
+function rxOf(rxItem) {
+  return rxItem ? (rxItem.detail ? "531" : `${rxItem.repMin}-${rxItem.repMax}`) : "";
+}
+
+function prevSession(s, ex, rx, key) {
+  return sessionsFor(s.workouts, ex.id, rx || undefined).find((h) => h.date < key) || null;
+}
+
+function feedbackFor(s, ex, rxItem, prev, sets) {
+  return sets.map((x, i) => {
+    if (rxItem?.detail) {
+      const d = rxItem.detail[i];
+      if (!d) return { level: "ok", notes: ["Extra set beyond the plan."] };
+      if (+x.reps >= d.reps) return { level: "good", notes: [d.plus ? `AMRAP: ${x.reps} reps, ${x.reps - d.reps} over the minimum ✓` : `Hit the prescribed ${d.weight}×${d.reps} ✓`] };
+      return { level: "warn", notes: [`Missed the prescribed ${d.reps} reps.${d.plus ? " Missing the + set minimum means your Training Max is too high. Lower it 10% next cycle." : ""}`] };
+    }
+    return setFeedback({
+      ex, set: x, index: i, prev,
+      repMin: rxItem?.repMin ?? ex.repMin, repMax: rxItem?.repMax ?? ex.repMax, totalSets: rxItem?.sets ?? Math.max(3, sets.length),
+    });
+  });
+}
+
+function workoutReview(s, w, key, order, exById) {
+  const rows = order.map((id) => {
+    const ex = exById[id];
+    const sets = w.sets.filter((x) => x.exId === id);
+    if (!sets.length) return null;
+    const rxItem = w.plan?.items?.find((i) => i.exId === id);
+    const rx = rxOf(rxItem);
+    const prev = prevSession(s, ex, rx, key);
+    let verdict;
+    if (rxItem?.detail) {
+      const missed = feedbackFor(s, ex, rxItem, prev, sets).some((f) => f.level === "warn");
+      verdict = missed ? { kind: "down", text: "Missed prescribed reps on at least one set." } : { kind: "up", text: "Every prescribed set completed." };
+    } else verdict = exerciseVerdict(sets, prev);
+    const exRx = rxItem && !rxItem.detail ? { ...ex, repMin: rxItem.repMin, repMax: rxItem.repMax, sets: rxItem.sets } : ex;
+    const next = rxItem?.detail ? "Next time: follow the next 5/3/1 week." : `Next time: ${suggestNext(exRx, { ...s.workouts, [key]: w }, addDays(key, 1), rx || undefined).note.replace(/^Last: .*?Today: /, "")}`;
+    const prs = sets.filter((x) => isPR(s.workouts, id, x, key)).length;
+    return { ex, verdict, next, prs, volume: sets.reduce((t, x) => t + (+x.weight || 0) * +x.reps, 0) };
+  }).filter(Boolean);
+  if (!rows.length) return "";
+  const count = (k) => rows.filter((r) => r.verdict.kind === k).length;
+  const prs = rows.reduce((t, r) => t + r.prs, 0);
+  const volume = rows.reduce((t, r) => t + r.volume, 0);
+  const headline = count("down") > count("up") ? "Tough day. Recover well and come back stronger." : count("up") ? "You're progressing. This is how muscle is built and kept." : "Solid work. Next session, push for one more rep.";
+  return html`
+    <section class="card review">
+      <h2>🧠 Coach's workout review</h2>
+      <p><strong>${headline}</strong></p>
+      <p class="small muted">${count("up")} progressed · ${count("same")} held · ${count("down")} down · ${count("new")} new · ${prs} PR${prs === 1 ? "" : "s"} · ${Math.round(volume).toLocaleString()} lb total volume</p>
+      <ul class="review-list">${rows.map((r) => html`
+        <li><strong>${VERDICT_ICON[r.verdict.kind]} ${r.ex.name}</strong>${r.prs ? html` <span class="tag pr">${r.prs} PR</span>` : ""}
+          <div class="small">${r.verdict.text}</div>
+          <div class="small muted">${r.next}</div></li>`)}</ul>
+    </section>`;
+}
+
 function exerciseCard(s, ex, w, key) {
   const sets = w.sets.filter((x) => x.exId === ex.id);
   const rxItem = w.plan?.items?.find((i) => i.exId === ex.id);
@@ -516,23 +696,40 @@ function exerciseCard(s, ex, w, key) {
   const range = rxItem ? (rxItem.repMin === rxItem.repMax ? `${rxItem.repMin}` : `${rxItem.repMin}–${rxItem.repMax}`) : "";
   const target = rxItem ? (rxItem.detail ? `${rxItem.sets} sets` : `${rxItem.sets} × ${range}`) : `${ex.repMin}–${ex.repMax} reps`;
   const rest = rxItem?.rest;
+  const prev = prevSession(s, ex, rx, key);
+  const feedback = feedbackFor(s, ex, rxItem, prev, sets);
+  const verdict = !rxItem?.detail && sets.length ? exerciseVerdict(sets, prev) : null;
   return html`
     <section class="card">
       <h3>${ex.name} <span class="small muted">${target}${rest ? ` · rest ${fmtRest(rest)}` : ""}</span></h3>
+      ${howOf(ex)?.cues?.[0] ? html`<p class="small cue">💡 ${howOf(ex).cues[0]}</p>` : ""}
       ${rxItem ? html`<div class="set-progress">${Math.min(sets.length, rxItem.sets)}/${rxItem.sets} sets${sets.length >= rxItem.sets ? " ✅" : ""}</div>` : ""}
       <p class="suggest suggest-${sug.kind || "new"}">${sug.kind === "up" ? "⬆️ " : sug.kind === "deload" ? "↘️ " : "🎯 "}${sug.note}</p>
       ${rxItem?.note && !rxItem.detail ? html`<p class="small muted">${rxItem.note}</p>` : ""}
       ${rxItem?.detail ? html`<table class="table plan-table"><tr><th>Set</th><th>Weight</th><th>Reps</th><th></th></tr>
         ${rxItem.detail.map((d, i) => html`<tr class="${i < sets.length ? "done" : ""}"><td>${i + 1}</td><td>${d.weight} lb</td><td>${d.reps}${d.plus ? "+" : ""}</td><td class="tiny muted">${d.label}</td></tr>`)}</table>` : ""}
-      ${sets.length ? html`<ol class="sets">${sets.map((x) => html`
-        <li><span><strong>${x.weight}</strong> lb × <strong>${x.reps}</strong>${isPR(s.workouts, ex.id, x, key) ? html` <span class="tag pr">PR</span>` : ""}</span>
-        <button type="button" class="icon-btn" data-action="del-set" data-id="${x.id}" aria-label="Delete set">✕</button></li>`)}</ol>` : ""}
+      ${sets.length ? html`<ol class="sets">${sets.map((x, i) => html`
+        <li><div class="set-main"><span class="set-n">${i + 1}</span><span class="grow"><strong>${x.weight}</strong> lb × <strong>${x.reps}</strong>${x.rir !== undefined && x.rir !== "" ? html` <span class="small muted">@ ${x.rir} RIR</span>` : ""}${isPR(s.workouts, ex.id, x, key) ? html` <span class="tag pr">PR</span>` : ""}</span>
+          <button type="button" class="icon-btn" data-action="del-set" data-id="${x.id}" aria-label="Delete set">✕</button></div>
+          <div class="fb fb-${feedback[i].level}">${FB_ICON[feedback[i].level]} ${feedback[i].notes.join(" ")}</div></li>`)}</ol>` : ""}
+      ${verdict ? html`<p class="verdict verdict-${verdict.kind}">${VERDICT_ICON[verdict.kind]} ${verdict.text}</p>` : ""}
       <form class="inline" data-form="set" data-ex="${ex.id}" data-rx="${rx}" data-rest="${rest || ""}">
         <label>lb<input name="weight" type="number" inputmode="decimal" step="0.5" min="0" value="${nextWeight ?? ""}" required></label>
         <label>reps<input name="reps" type="number" inputmode="numeric" min="1" value="${nextReps}" required></label>
+        <label title="Reps in reserve: how many more good reps you could have done">RIR<select name="rir"><option value="">—</option>${[0, 1, 2, 3, 4].map((n) => html`<option value="${n}">${n === 4 ? "4+" : n}</option>`)}</select></label>
         <button class="btn" type="submit">Log set ${sets.length + 1}</button>
         ${rest ? html`<button type="button" class="btn ghost" data-action="rest" data-sec="${rest}" aria-label="Start rest timer">⏱ ${fmtRest(rest)}</button>` : ""}
       </form>
+      ${howBlock(howOf(ex))}
+      ${s.settings.apiKey ? html`<details class="how" ${ui.coach[ex.id] ? "open" : ""}><summary>Ask the coach about ${ex.name}</summary>
+        <form data-form="ask-coach" data-ex="${ex.id}" class="inline">
+          <label class="grow">Question<input name="q" placeholder="e.g. Should I go heavier or add reps? My lower back feels it." required></label>
+          <button class="btn" type="submit" ${ui.coach[ex.id]?.loading ? "disabled" : ""}>Ask</button>
+        </form>
+        ${ui.coach[ex.id]?.loading ? html`<p class="muted small">Thinking…</p>` : ""}
+        ${ui.coach[ex.id]?.error ? html`<p class="error">${ui.coach[ex.id].error}</p>` : ""}
+        ${ui.coach[ex.id]?.text ? html`<div class="reflection">${raw(renderMarkdown(ui.coach[ex.id].text))}</div>` : ""}
+      </details>` : ""}
     </section>`;
 }
 
@@ -778,6 +975,8 @@ function ensureFaith(s, key) {
 function ensureExercise(st, name, repMin, repMax) {
   let ex = st.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
   const meta = CATALOG[name];
+  const info = exerciseInfo(name);
+  if (info) { repMin ??= info.repMin; repMax ??= info.repMax; }
   if (!ex) {
     ex = { id: uid(), name, kind: meta?.[0] || "upper", muscle: meta?.[1], repMin, repMax, increment: meta?.[2] || 5 };
     st.exercises.push(ex);
@@ -863,9 +1062,51 @@ const forms = {
     });
   },
   intention(d) { update((s) => { ensureWorkout(s, ui.date).intention = d.intention.trim(); }); },
+  "ex-search"(d) {
+    ui.exQuery = d.q;
+    ui.exPick = null;
+    ui.exLookup = null;
+    const q = d.q.trim();
+    const top = q && matchExercise(q, getState().exercises)[0];
+    if (q && (!top || top.score < MATCH_MAYBE) && getState().settings.apiKey) return startLookup(q);
+    render();
+  },
+  "confirm-ex"(d) {
+    const L = ui.exLookup;
+    const repMin = Math.max(1, +d.repMin || 8), repMax = Math.max(repMin, +d.repMax || 12);
+    update((st) => {
+      let ex = st.exercises.find((e) => e.name.toLowerCase() === d.name.trim().toLowerCase());
+      if (!ex) {
+        ex = {
+          id: uid(), name: d.name.trim(), kind: d.kind, muscle: d.muscle, repMin, repMax, increment: Math.max(0, +d.increment || 0),
+          aliases: [...new Set([L.query, ...(L.data.aliases || [])])], how: L.data.how, verified: true,
+        };
+        st.exercises.push(ex);
+      }
+      addToToday(st, ex.id);
+    });
+    ui.exQuery = ""; ui.exLookup = null; ui.exPick = null;
+    render();
+    toast("Exercise verified and added");
+  },
+  async "ask-coach"(d, form) {
+    const s = getState();
+    const ex = s.exercises.find((e) => e.id === form.dataset.ex);
+    if (!ex) return;
+    const recent = sessionsFor(s.workouts, ex.id).slice(0, 4).map((h) => `${h.date}: ${h.sets.map((x) => `${x.weight}x${x.reps}${x.rir !== undefined && x.rir !== "" ? `@${x.rir}RIR` : ""}`).join(", ")}`).join("; ");
+    ui.coach[ex.id] = { loading: true };
+    render();
+    try {
+      ui.coach[ex.id] = { text: await askCoach({ apiKey: s.settings.apiKey, exercise: `${ex.name} (target ${ex.repMin}–${ex.repMax} reps)`, question: d.q.trim(), recent }) };
+    } catch (err) {
+      ui.coach[ex.id] = { error: err.message };
+    }
+    render();
+  },
   "add-ex"(d) { if (d.exId) update((s) => { const w = ensureWorkout(s, ui.date); if (!w.order.includes(d.exId)) w.order.push(d.exId); }); ui.chartEx = d.exId; },
   set(d, form) {
     const set = { id: uid(), exId: form.dataset.ex, weight: +d.weight, reps: +d.reps };
+    if (d.rir !== "" && d.rir !== undefined) set.rir = +d.rir;
     if (form.dataset.rx) set.rx = form.dataset.rx;
     update((s) => { ensureWorkout(s, ui.date).sets.push(set); });
     if (form.dataset.rest) startRest(+form.dataset.rest);
@@ -990,6 +1231,19 @@ const actions = {
     if (confirm("Stop following this program? Your logged workouts stay.")) update((st) => { st.program = null; });
   },
   rest(el) { startRest(+el.dataset.sec); },
+  "ex-pick"(el) { ui.exPick = el.dataset.name; ui.exLookup = null; render(); },
+  "ex-clear"() { ui.exQuery = ""; ui.exPick = null; ui.exLookup = null; render(); },
+  "ex-lookup"(el) { ui.exQuery = el.dataset.q; startLookup(el.dataset.q); },
+  "add-known"(el) {
+    const info = exerciseInfo(el.dataset.name);
+    update((st) => {
+      const ex = ensureExercise(st, el.dataset.name, info?.repMin ?? 8, info?.repMax ?? 12);
+      addToToday(st, ex.id);
+    });
+    ui.exQuery = ""; ui.exPick = null;
+    render();
+    toast(`Added ${el.dataset.name}`);
+  },
   async reflect() {
     const s = getState();
     const g = ui.gospel[ui.date]?.data || s.faith[ui.date]?.gospel;
@@ -1037,6 +1291,15 @@ document.addEventListener("click", (e) => {
   if (link) return go(link.dataset.goto);
   const act = e.target.closest("button[data-action]");
   if (act && actions[act.dataset.action]) actions[act.dataset.action](act);
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target.dataset?.live !== "ex-query") return;
+  ui.exQuery = e.target.value;
+  ui.exPick = null;
+  ui.exLookup = null;
+  const box = document.getElementById("ex-results");
+  if (box) box.innerHTML = exResults(getState())[RAW];
 });
 
 document.addEventListener("change", (e) => {
