@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Temple Training</title>
+  <meta name="description" content="Calories, macros, progressive overload, and a daily Catholic rule of life — body and soul.">
+  <meta name="theme-color" content="#1f5e3a">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">✠ Temple Training</div>
+    <div class="date-nav">
+      <button type="button" data-action="day-prev" aria-label="Previous day">‹</button>
+      <button type="button" data-action="day-today" id="date-label"></button>
+      <button type="button" data-action="day-next" aria-label="Next day">›</button>
+    </div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <nav class="tabs" aria-label="Sections">
+    <button type="button" data-tab="today"><span>🏠</span>Today</button>
+    <button type="button" data-tab="food"><span>🍽️</span>Food</button>
+    <button type="button" data-tab="train"><span>🏋️</span>Train</button>
+    <button type="button" data-tab="faith"><span>✝️</span>Faith</button>
+    <button type="button" data-tab="me"><span>👤</span>Me</button>
+  </nav>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
