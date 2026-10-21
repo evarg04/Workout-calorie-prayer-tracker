@@ -58,6 +58,8 @@ Pick one and the app loads each day's workout, with sets, reps, and rest times:
 - **A workout review** shows how many lifts progressed, held or went down, your PRs, total volume, and the exact target for next time.
 - **Ask the coach** (needs your API key): ask a question about any exercise, with your recent sets as context.
 
+**Swap any exercise**: every exercise lists two substitutes that train the same muscle with the same movement pattern (e.g. Bench Press → Flat Dumbbell Press or Machine Chest Press), each with a reason. Swapping keeps the day's sets, reps and rest; tick "every time" to keep the swap for future sessions of your program (undo it from the program card). 5/3/1 main lifts stay fixed because their weights come from that lift's Training Max.
+
 **Warm-up, stretching and sauna** (Train → Workout and Train → Recovery):
 - A warm-up at the top of every workout, using the RAMP method: 5 minutes of easy cardio, dynamic mobility for that day's joints (lower, upper or full body), and ramp-up sets for your first lift calculated from today's working weight. Long static holds are left out before lifting, since they can slightly reduce strength.
 - A cool-down stretch after training, plus a full 10-minute stretching routine (2 × 30 s holds) for rest days.

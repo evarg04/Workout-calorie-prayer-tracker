@@ -250,3 +250,82 @@ export function matchExercise(query, custom = []) {
 
 export const MATCH_SURE = 0.8;
 export const MATCH_MAYBE = 0.5;
+
+// ---------- substitutes: same muscle, same movement pattern ----------
+// [exercise, [[substitute, why], [substitute, why]]]
+const SUBS = [
+  ["Back Squat", [["Hack Squat", "Same squat pattern on a machine; no spotter or bar on your back."], ["Leg Press", "Loads the quads hard with no balance or lower-back demand."]]],
+  ["Front Squat", [["Goblet Squat", "Same upright, front-loaded squat with a dumbbell."], ["Hack Squat", "Upright torso and quad focus on a machine."]]],
+  ["Goblet Squat", [["Front Squat", "Barbell version of the same upright squat; load it heavier."], ["Leg Press", "Quad-focused when you don't want to hold a weight."]]],
+  ["Leg Press", [["Hack Squat", "Machine squat with a similar quad focus."], ["Back Squat", "The free-weight original; more total-body work."]]],
+  ["Hack Squat", [["Leg Press", "Closest machine alternative for the quads."], ["Back Squat", "Free-weight squat if no hack machine is open."]]],
+  ["Bulgarian Split Squat", [["Smith Machine Split Squat", "Same single-leg pattern with the balance taken care of."], ["Walking Lunge", "Single-leg quad and glute work with dumbbells."]]],
+  ["Walking Lunge", [["Bulgarian Split Squat", "Single-leg work in place; easier in a crowded gym."], ["Smith Machine Split Squat", "Stable single-leg option you can load heavier."]]],
+  ["Smith Machine Split Squat", [["Bulgarian Split Squat", "Free-weight version with dumbbells."], ["Walking Lunge", "Single-leg alternative needing only dumbbells."]]],
+  ["Sissy Squat", [["Leg Extension", "Isolates the quads in the same knee-forward way."], ["Hack Squat", "Deep, knee-forward machine squat for the quads."]]],
+  ["Leg Extension", [["Sissy Squat", "Bodyweight or machine quad isolation if the extension is taken."], ["Goblet Squat", "Slow, deep goblet squats target the quads with one dumbbell."]]],
+  ["Deadlift", [["Romanian Deadlift", "Same hip hinge, lighter, with more hamstring focus."], ["Hip Thrust", "Trains the hips hard with far less lower-back load."]]],
+  ["Romanian Deadlift", [["Deadlift", "Heavier hinge from the floor."], ["Seated Leg Curl", "Hamstrings without loading the back."]]],
+  ["Lying Leg Curl", [["Seated Leg Curl", "Same curl, seated; slightly greater hamstring stretch."], ["Romanian Deadlift", "Free-weight hamstring work if no curl machine is free."]]],
+  ["Seated Leg Curl", [["Lying Leg Curl", "Same knee-curl movement, lying down."], ["Romanian Deadlift", "Hinge-based hamstring work with a barbell or dumbbells."]]],
+  ["Hip Thrust", [["Romanian Deadlift", "Hip hinge for glutes and hamstrings."], ["Bulgarian Split Squat", "Lean forward to bias the glutes on one leg."]]],
+  ["Standing Calf Raise", [["Seated Calf Raise", "Same raise seated; more focus on the lower calf."], ["Leg Press", "Do calf presses on the leg press platform."]]],
+  ["Seated Calf Raise", [["Standing Calf Raise", "Straight-knee version for the upper calf."], ["Leg Press", "Calf presses on the leg press with knees bent slightly."]]],
+  ["Bench Press", [["Flat Dumbbell Press", "Same press with dumbbells; good if the bench is taken."], ["Machine Chest Press", "Machine version; no spotter needed."]]],
+  ["Incline Barbell Press", [["Incline Dumbbell Press", "Same incline with dumbbells and a deeper stretch."], ["Machine Chest Press", "Set the seat low to bias the upper chest."]]],
+  ["Flat Dumbbell Press", [["Bench Press", "Barbell version; easier to load heavy."], ["Machine Chest Press", "Stable machine press for the same muscles."]]],
+  ["Incline Dumbbell Press", [["Incline Barbell Press", "Barbell incline for heavier loading."], ["Machine Chest Press", "Machine press with the seat set low."]]],
+  ["Close-Grip Bench Press", [["JM Press", "Barbell triceps press with a similar groove."], ["Dips", "Stay upright to bias the triceps."]]],
+  ["Dips", [["Flat Dumbbell Press", "Chest press without the shoulder stretch of dips."], ["Close-Grip Bench Press", "Barbell press hitting chest and triceps."]]],
+  ["Pec Deck Fly", [["Cable Crossover", "Same fly motion on cables."], ["Flat Dumbbell Press", "Pressing alternative if no fly station is open."]]],
+  ["Cable Crossover", [["Pec Deck Fly", "Machine fly with the same arc."], ["Incline Dumbbell Press", "Pressing alternative for the chest."]]],
+  ["Machine Chest Press", [["Flat Dumbbell Press", "Free-weight press for the same muscles."], ["Bench Press", "Barbell version of the press."]]],
+  ["Push-up", [["Flat Dumbbell Press", "Load the same pattern with dumbbells."], ["Machine Chest Press", "Machine press when you need more resistance."]]],
+  ["Barbell Row", [["Chest-Supported Row", "Same row with no lower-back strain."], ["T-Bar Row", "Heavy row with a fixed bar path."]]],
+  ["Dumbbell Row", [["Single-Arm Cable Row", "Same one-arm row on a cable."], ["Chest-Supported Row", "Both arms with the chest supported."]]],
+  ["Chest-Supported Row", [["Seated Cable Row", "Supported upper-back row on a cable."], ["Dumbbell Row", "One arm at a time with a bench for support."]]],
+  ["T-Bar Row", [["Barbell Row", "Free barbell version of the same row."], ["Chest-Supported Row", "Back-friendly row with support."]]],
+  ["Seated Cable Row", [["Chest-Supported Row", "Similar horizontal row with the chest supported."], ["Dumbbell Row", "One-arm row if the cable station is busy."]]],
+  ["Lat Pulldown", [["Pull-up (added weight)", "The bodyweight original of the pulldown."], ["High Row Machine", "Plate-loaded vertical pull for the lats."]]],
+  ["Pull-up (added weight)", [["Lat Pulldown", "Same vertical pull; set any weight you need."], ["Chin-up", "Palms facing you; adds more biceps."]]],
+  ["Chin-up", [["Pull-up (added weight)", "Overhand grip for more lat focus."], ["Lat Pulldown", "Use an underhand grip to match the chin-up."]]],
+  ["High Row Machine", [["Lat Pulldown", "Cable vertical pull for the lats."], ["Pull-up (added weight)", "Bodyweight vertical pull."]]],
+  ["Single-Arm Cable Row", [["Dumbbell Row", "One-arm row with a dumbbell."], ["Seated Cable Row", "Two-arm cable row."]]],
+  ["Wide-Grip Chest-Supported Row", [["Chest-Supported Row", "Same supported row; use a wide grip."], ["Rear Delt Fly", "Isolates the rear delts and upper back."]]],
+  ["Straight-Arm Pulldown", [["Lat Pulldown", "Compound lat work if the cable is set high elsewhere."], ["Pull-up (added weight)", "Bodyweight lat work."]]],
+  ["Barbell Shrug", [["Face Pull", "Upper-back and rear-delt work with a cable."], ["T-Bar Row", "Heavy row that also hits the traps."]]],
+  ["Overhead Press", [["Seated Dumbbell Shoulder Press", "Same press with dumbbells, seated and supported."], ["Arnold Press", "Dumbbell press with extra front-delt rotation."]]],
+  ["Seated Dumbbell Shoulder Press", [["Overhead Press", "Standing barbell press."], ["Arnold Press", "Rotating dumbbell press for the shoulders."]]],
+  ["Arnold Press", [["Seated Dumbbell Shoulder Press", "Standard dumbbell press."], ["Overhead Press", "Barbell press for heavier loads."]]],
+  ["Dumbbell Lateral Raise", [["Cable Lateral Raise", "Same raise with constant cable tension."], ["Arnold Press", "Pressing alternative for the side delts."]]],
+  ["Cable Lateral Raise", [["Dumbbell Lateral Raise", "Same raise with dumbbells."], ["Face Pull", "Cable shoulder work if lateral raises aggravate you."]]],
+  ["Rear Delt Fly", [["Face Pull", "Rear delts and upper back on a cable rope."], ["Wide-Grip Chest-Supported Row", "Wide row that hammers the rear delts."]]],
+  ["Face Pull", [["Rear Delt Fly", "Isolates the rear delts with dumbbells or a machine."], ["Wide-Grip Chest-Supported Row", "Wide-elbow row for the upper back."]]],
+  ["Barbell Curl", [["EZ-Bar Curl", "Same curl; easier on the wrists."], ["Dumbbell Curl", "One arm at a time; fixes imbalances."]]],
+  ["EZ-Bar Curl", [["Barbell Curl", "Straight-bar version."], ["Cable Curl", "Constant tension on a cable."]]],
+  ["Dumbbell Curl", [["Cable Curl", "Same curl with constant tension."], ["Barbell Curl", "Heavier loading with a bar."]]],
+  ["Hammer Curl", [["Cable Hammer Curl", "Same neutral grip on a rope."], ["Dumbbell Curl", "Standard curl if you want more biceps."]]],
+  ["Incline Dumbbell Curl", [["Cable Curl", "Step forward from the stack for a similar stretch."], ["Preacher Curl", "Strict biceps curl with arm support."]]],
+  ["Cable Curl", [["Dumbbell Curl", "Free-weight version."], ["EZ-Bar Curl", "Bar curl for heavier loads."]]],
+  ["Preacher Curl", [["Single-Arm Preacher Curl", "Same supported curl, one arm at a time."], ["Incline Dumbbell Curl", "Long-stretch biceps work with dumbbells."]]],
+  ["Single-Arm Preacher Curl", [["Preacher Curl", "Two-arm version with an EZ bar or machine."], ["Incline Dumbbell Curl", "Stretched-position curl with dumbbells."]]],
+  ["Cable Hammer Curl", [["Hammer Curl", "Same neutral grip with dumbbells."], ["Cable Curl", "Underhand cable curl."]]],
+  ["Triceps Rope Pushdown", [["Overhead Cable Triceps Extension", "Cable triceps with a deeper stretch."], ["Dips", "Bodyweight triceps; stay upright."]]],
+  ["Overhead Cable Triceps Extension", [["Seated Overhead Triceps Extension", "Same overhead stretch with a dumbbell."], ["Skull Crusher", "Lying extension that stretches the long head."]]],
+  ["JM Press", [["Close-Grip Bench Press", "Barbell press with a similar triceps focus."], ["Skull Crusher", "Lying triceps extension."]]],
+  ["Seated Overhead Triceps Extension", [["Overhead Cable Triceps Extension", "Same stretch on a cable."], ["Skull Crusher", "Lying version with an EZ bar."]]],
+  ["Skull Crusher", [["JM Press", "Heavier hybrid press for the triceps."], ["Overhead Cable Triceps Extension", "Overhead stretch on a cable."]]],
+  ["Hanging Leg Raise", [["Cable Crunch", "Weighted ab work you can load progressively."], ["Ab Wheel Rollout", "Anti-extension core strength."]]],
+  ["Cable Crunch", [["Hanging Leg Raise", "Bodyweight ab work from a bar."], ["Ab Wheel Rollout", "Core work with only an ab wheel."]]],
+  ["Ab Wheel Rollout", [["Hanging Leg Raise", "Hanging ab work if no wheel is around."], ["Cable Crunch", "Loadable ab work on a cable."]]],
+];
+const SUB_MAP = Object.fromEntries(SUBS.map(([name, subs]) => [name.toLowerCase(), subs]));
+
+// Substitutes for an exercise (by name), falling back to other built-ins for the same muscle.
+export function substitutesFor(ex) {
+  const listed = SUB_MAP[String(ex.name).toLowerCase()];
+  if (listed) return listed.map(([name, why]) => ({ name, why }));
+  const muscle = ex.muscle || exerciseInfo(ex.name)?.muscle;
+  return EXERCISES.filter((e) => e.muscle === muscle && e.name !== ex.name).slice(0, 2)
+    .map((e) => ({ name: e.name, why: `Also trains the ${muscle}.` }));
+}

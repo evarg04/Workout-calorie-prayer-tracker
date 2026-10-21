@@ -1,7 +1,7 @@
 import { getState, update, save, subscribe, uid, dateKey, addDays, parseKey, exportJSON, importJSON } from "./store.js";
 import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weeklyAdherence, paceVerdict, ACTIVITY_LEVELS } from "./nutrition.js";
 import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, setFeedback, exerciseVerdict, e1rm, workingWeight } from "./lifts.js";
-import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE } from "./exercise-db.js";
+import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE, substitutesFor } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
 import { APP_VERSION } from "./version.js";
 import { RAISE, mobilityFor, warmupSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP } from "./recovery.js";
@@ -737,6 +737,8 @@ function programCard(s, key, w) {
         </form>
         <p class="hint">Missed a day, swapped days, or joined mid-week? Pick where you are and the rotation continues from there.</p>
       </details>
+      ${Object.keys(s.program.swaps || {}).length ? html`<div class="swaps"><span class="eyebrow">Your swaps</span>
+        <ul class="entries">${Object.entries(s.program.swaps).map(([from, to]) => html`<li><span>${from} → <strong>${to}</strong></span><button type="button" class="icon-btn" data-action="unswap" data-name="${from}" aria-label="Undo swap for ${from}">✕</button></li>`)}</ul></div>` : ""}
       <details><summary>About this program</summary>
         <p class="small">${prog.about}</p>
         <p class="small"><strong>Best for:</strong> ${prog.bestFor}</p>
@@ -1205,6 +1207,24 @@ function warmupFor(s, ex, w, rxItem, sug, nextWeight) {
   return { ...plan, targetLabel: `${target} lb` };
 }
 
+// Two same-muscle substitutes for when equipment is taken or you'd rather do something else.
+function swapBlock(s, ex, hasSets) {
+  const subs = substitutesFor(ex);
+  if (!subs.length) return "";
+  return html`
+    <details class="how swap">
+      <summary>Swap exercise</summary>
+      <p class="hint">${hasSets ? "You've logged sets on this already, so a substitute is added as an extra exercise." : "Same muscle, same movement pattern. Today's sets, reps and rest carry over; the new lift tracks its own progress."}</p>
+      <ul class="sub-list">${subs.map((x) => html`
+        <li>
+          <div class="sub-top"><strong>${x.name}</strong>
+            <button type="button" class="btn btn-sm" data-action="swap-ex" data-from="${ex.id}" data-to="${x.name}">${hasSets ? "Add" : "Use this instead"}</button></div>
+          <span class="sub-line">${x.why}</span>
+        </li>`)}</ul>
+      ${s.program && !hasSets ? html`<label class="check"><input type="checkbox" name="always"> Use the swap every time this program calls for ${ex.name}</label>` : ""}
+    </details>`;
+}
+
 const TARGET_LABEL = { up: "Add weight", deload: "Deload", reps: "Beat last time", new: "Target", carry: "Carried over" };
 
 function exerciseCard(s, ex, w, key, open = true) {
@@ -1313,6 +1333,8 @@ function exerciseCard(s, ex, w, key, open = true) {
         </div>
       </form>
 
+      ${rxItem?.swappedFrom ? html`<p class="hint">Swapped in for ${rxItem.swappedFrom}.</p>` : ""}
+      ${rxItem?.detail ? "" : swapBlock(s, ex, sets.length > 0)}
       ${howBlock(how)}
       ${s.settings.apiKey ? html`<details class="how" ${ui.coach[ex.id] ? "open" : ""}><summary>Ask the coach</summary>
         <form data-form="ask-coach" data-ex="${ex.id}" class="inline">
@@ -2152,7 +2174,11 @@ const actions = {
     const session = todaysSession(s.program, s.workouts, ui.date, tmFor(s));
     update((st) => {
       const w = ensureWorkout(st, ui.date);
-      const items = session.items.map((it) => ({ ...it, exId: ensureExercise(st, it.name, it.repMin, it.repMax).id }));
+      const swaps = st.program.swaps || {};
+      const items = session.items.map((it) => {
+        const name = !it.detail && swaps[it.name] ? swaps[it.name] : it.name;
+        return { ...it, name, swappedFrom: name !== it.name ? it.name : undefined, exId: ensureExercise(st, name, it.repMin, it.repMax).id };
+      });
       w.plan = { programId: session.programId, dayIndex: session.dayIndex, dayName: session.dayName, week: session.week, deload: session.deload, items };
       w.order = [...new Set([...items.map((i) => i.exId), ...(w.order || [])])];
     });
@@ -2169,6 +2195,33 @@ const actions = {
     render();
   },
   rest(el) { startRest(+el.dataset.sec); },
+  "swap-ex"(el) {
+    const always = !!el.closest("details")?.querySelector('input[name="always"]')?.checked;
+    let toId;
+    update((st) => {
+      const w = ensureWorkout(st, ui.date);
+      const from = st.exercises.find((e) => e.id === el.dataset.from);
+      const rxItem = w.plan?.items?.find((i) => i.exId === from.id);
+      const to = ensureExercise(st, el.dataset.to, rxItem?.repMin, rxItem?.repMax);
+      toId = to.id;
+      const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])];
+      if (w.sets.some((x) => x.exId === from.id)) {
+        if (!order.includes(to.id)) order.splice(order.indexOf(from.id) + 1, 0, to.id);
+        w.order = order;
+      } else {
+        w.order = [...new Set(order.map((id) => (id === from.id ? to.id : id)))];
+        if (rxItem) Object.assign(rxItem, { exId: to.id, name: to.name, swappedFrom: rxItem.swappedFrom || from.name });
+      }
+      if (always && st.program) (st.program.swaps ??= {})[rxItem?.swappedFrom || from.name] = to.name;
+    });
+    ui.openEx = toId;
+    render();
+    toast(always ? `${el.dataset.to} will replace it from now on` : `Swapped to ${el.dataset.to}`);
+  },
+  "unswap"(el) {
+    update((st) => { delete st.program.swaps[el.dataset.name]; });
+    toast(`${el.dataset.name} is back in the program`);
+  },
   "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
   "scan-cancel"() { ui.scan = null; render(); },
   "rest-cancel"() { ui.rest = null; render(); },
