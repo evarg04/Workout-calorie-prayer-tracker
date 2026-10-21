@@ -483,3 +483,8 @@ ol.prayer { padding-left: 22px; }
 .max-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .maxes-table td:nth-child(n+2), .maxes-table th:nth-child(n+2) { text-align: right; }
 .maxes-table td:last-child { width: 36px; }
+
+.maxes-entry { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.entry-title { font: 700 14px/1.2 var(--f-num); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.grow-btn { flex: 1; }
+textarea { -webkit-user-select: text; user-select: text; touch-action: manipulation; font-size: 16px; }
