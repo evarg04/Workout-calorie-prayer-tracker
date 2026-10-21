@@ -977,6 +977,20 @@ function programComplete(w) {
   return items.length > 0 && items.every((i) => w.sets.filter((x) => x.exId === i.exId).length >= i.sets);
 }
 
+// Prescribed lifts (not the optional ab add-ons) that still have sets left.
+function openItems(w) {
+  return (w.plan?.items || []).filter((i) => !i.extra && w.sets.filter((x) => x.exId === i.exId).length < i.sets);
+}
+
+// The workout counts as finished when its last prescribed lift is done, even if a set was skipped earlier.
+function lastLiftDone(w) {
+  const main = (w.plan?.items || []).filter((i) => !i.extra);
+  if (!main.length) return false;
+  const pos = (id) => { const k = (w.order || []).indexOf(id); return k < 0 ? Infinity : k; };
+  const last = main.reduce((a, b) => (pos(b.exId) >= pos(a.exId) ? b : a));
+  return w.sets.filter((x) => x.exId === last.exId).length >= last.sets;
+}
+
 function finisherSection(s, w) {
   const extras = w.extras || {};
   const weight = latestWeight(s.weights) || s.profile.weightLb;
@@ -990,6 +1004,7 @@ function finisherSection(s, w) {
 }
 
 const EXTRA_NAME = { abs: "abs", cardio: "cardio", sauna: "sauna" };
+const listAnd = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`);
 const listWords = (a) => (a.length < 2 ? a.join("") : `${a.slice(0, -1).join(", ")} or ${a[a.length - 1]}`);
 
 // Extras still on offer today, in the order they make sense: abs, cardio, then sauna last.
@@ -1015,6 +1030,7 @@ function finisherSheet(s, w, stage = "start") {
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
       <h2 id="sheet-title">${head[0]}</h2>
       ${head[1] ? html`<p class="hint">${head[1]}</p>` : ""}
+      ${stage === "start" && openItems(w).length ? html`<p class="hint">A few sets were left on ${listAnd(openItems(w).map((i) => `${i.name} (${w.sets.filter((x) => x.exId === i.exId).length} of ${i.sets})`))}. That's fine. Log them first if you want, or finish now.</p>` : ""}
       ${left.length ? html`<div class="sheet-options">${left.map((k) => opt[k])}</div>` : ""}
       <button type="button" class="btn full" data-action="finish-pick" data-pick="done">${stage === "next" ? "Wrap up and see my summary" : "I'm done for today"}</button>
     </div>`[RAW];
@@ -1519,6 +1535,14 @@ function exerciseCard(s, ex, w, key, open = true) {
       ${setRows}
       ${verdict ? html`<p class="verdict verdict-${verdict.kind}"><span class="target-label">${VERDICT_LABEL[verdict.kind]}</span> ${verdict.text}</p>` : ""}
 
+      ${done && ui.extraSet !== ex.id ? html`
+        <div class="done-panel">
+          <p><strong>All ${rxItem.sets} sets done.</strong> ${!openItems(w).length ? "Nice work." : lastLiftDone(w) ? `That was the last lift. ${openItems(w)[0].name} has a set left if you want it.` : `Next: ${openItems(w)[0].name}.`}</p>
+          <div class="set-actions">
+            ${!openItems(w).length || lastLiftDone(w) ? html`<button type="button" class="btn" data-action="${w.finished ? "wrap-up" : "finish-open"}">${w.finished ? "See today's summary" : "Finish workout"}</button>` : html`<button type="button" class="btn" data-action="open-ex" data-id="${openItems(w)[0].exId}">Go to ${openItems(w)[0].name}</button>`}
+            <button type="button" class="btn ghost" data-action="extra-set" data-id="${ex.id}">Log an extra set</button>
+          </div>
+        </div>` : html`
       <form class="set-form" data-form="set" data-ex="${ex.id}" data-rx="${rx}" data-rest="${rest || ""}">
         <div class="steppers">
           <div class="field">
@@ -1546,7 +1570,7 @@ function exerciseCard(s, ex, w, key, open = true) {
           <button class="btn btn-log" type="submit">Log set ${sets.length + 1}</button>
           ${rest ? html`<button type="button" class="btn ghost" data-action="rest" data-sec="${rest}">Rest ${fmtRest(rest)}</button>` : ""}
         </div>
-      </form>
+      </form>`}
 
       ${rxItem?.swappedFrom ? html`<p class="hint">Swapped in for ${rxItem.swappedFrom}.</p>` : ""}
       ${rxItem?.detail ? "" : swapBlock(s, ex, sets.length > 0)}
@@ -2246,7 +2270,9 @@ const forms = {
       w.sets.push(set);
       const rxItem = w.plan?.items?.find((i) => i.exId === set.exId);
       if (w.sets.filter((x) => x.exId === set.exId).length >= (rxItem?.sets ?? 99)) ui.openEx = null;
-      justFinished = !wasComplete && programComplete(w) && !w.finished;
+      const item = w.plan?.items?.find((i) => i.exId === set.exId && !i.extra);
+      const exJustDone = item && w.sets.filter((x) => x.exId === set.exId).length === item.sets;
+      justFinished = !w.finished && ((!wasComplete && programComplete(w)) || (exJustDone && (lastLiftDone(w) || !openItems(w).length)));
       const abs = (w.plan?.items || []).filter((i) => i.extra);
       absDone = !justFinished && w.finished && !w.wrapped && abs.some((i) => i.exId === set.exId) && abs.every((i) => w.sets.filter((x) => x.exId === i.exId).length >= i.sets);
     });
@@ -2487,7 +2513,8 @@ const actions = {
     update((st) => { delete st.program.swaps[el.dataset.name]; });
     toast(`${el.dataset.name} is back in the program`);
   },
-  "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
+  "extra-set"(el) { ui.extraSet = el.dataset.id; ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"] input[name="weight"]`)?.focus(); },
+  "open-ex"(el) { ui.extraSet = null; ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
   "scan-cancel"() { ui.scan = null; render(); },
   "rest-cancel"() { ui.rest = null; render(); },
   "parsed-edit"() { ui.parsed = null; render(); },
