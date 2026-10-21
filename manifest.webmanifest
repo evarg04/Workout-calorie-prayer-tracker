@@ -1,0 +1,13 @@
+{
+  "name": "Temple Training",
+  "short_name": "Temple",
+  "description": "Calories, macros, progressive overload, and a daily Catholic rule of life.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f6f2",
+  "theme_color": "#16181a",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
