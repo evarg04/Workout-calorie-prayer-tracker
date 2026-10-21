@@ -2,6 +2,7 @@ import { getState, update, save, subscribe, uid, dateKey, addDays, parseKey, exp
 import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weeklyAdherence, paceVerdict, ACTIVITY_LEVELS } from "./nutrition.js";
 import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, setFeedback, exerciseVerdict } from "./lifts.js";
 import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE } from "./exercise-db.js";
+import { parseWorkoutText } from "./workout-text.js";
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, fetchGospel, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
@@ -697,6 +698,8 @@ function renderTrain(s) {
 
     ${order.map((id) => exerciseCard(s, exById[id], w, key, id === openId))}
 
+    ${typeWorkoutCard(s)}
+
     <section class="card">
       <div class="sec-head"><h2>Add exercise</h2></div>
       <form class="inline" data-form="ex-search">
@@ -713,6 +716,48 @@ function renderTrain(s) {
     </section>
 
     ${workoutReview(s, w, key, order, exById)}`;
+}
+
+// ---------- type or paste a whole workout ----------
+
+const titleCase = (t) => t.replace(/\b\w/g, (c) => c.toUpperCase());
+
+function typeWorkoutCard(s) {
+  const rows = ui.parsed;
+  if (!rows) {
+    return html`
+      <section class="card">
+        <div class="sec-head"><h2>Type a workout</h2></div>
+        <p class="hint">One exercise per line, the way you'd text it: "Pull up 4x10", "Single arm cable row 3x8 60 lbs", "Chest supported row 3x6 3 plates each side".</p>
+        <form data-form="parse-workout">
+          <textarea name="text" rows="4" placeholder="Pull up 4x10&#10;Single arm cable row 3x8 60 lbs" required>${ui.parsedText || ""}</textarea>
+          <button class="btn full" type="submit">Read workout</button>
+        </form>
+      </section>`;
+  }
+  const ok = rows.filter((r) => !r.error);
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Check your workout</h2><span class="sec-meta">${fmtDate(ui.date)}</span></div>
+      <form data-form="log-parsed">
+        <ul class="parsed">${rows.map((r, i) => r.error ? html`
+          <li class="parsed-row is-error"><span class="sub-line">"${r.line}"</span><p class="error">${r.error}</p></li>` : html`
+          <li class="parsed-row">
+            <div class="parsed-top">
+              <select name="ex${i}" aria-label="Exercise for line ${i + 1}">
+                ${r.options.map((o) => html`<option value="${o}" ${o === r.exercise ? "selected" : ""}>${o}</option>`)}
+                <option value="new:${titleCase(r.name)}" ${r.status === "new" ? "selected" : ""}>New exercise: ${titleCase(r.name)}</option>
+              </select>
+              ${r.status === "sure" ? html`<span class="chip chip-good">matched</span>` : r.status === "check" ? html`<span class="chip chip-warning">check</span>` : html`<span class="chip chip-new">new</span>`}
+            </div>
+            <div class="parsed-sets"><strong>${r.sets} × ${r.reps}</strong> @ ${r.weight ? `${r.weight} lb` : "bodyweight"}</div>
+            ${r.notes.length ? html`<p class="sub-line">${r.notes.join(". ")}.</p>` : ""}
+            <p class="sub-line">You typed: "${r.line}"</p>
+          </li>`)}</ul>
+        <button class="btn full btn-log" type="submit" ${ok.length ? "" : "disabled"}>Log ${ok.reduce((t, r) => t + r.sets, 0)} sets</button>
+        <button class="btn ghost full" type="button" data-action="parsed-edit">Edit text</button>
+      </form>
+    </section>`;
 }
 
 // ---------- exercise recognition ----------
@@ -1379,6 +1424,39 @@ const forms = {
     render();
     toast("Exercise verified and added");
   },
+  "parse-workout"(d) {
+    ui.parsedText = d.text;
+    ui.parsed = parseWorkoutText(d.text, getState().exercises);
+    render();
+  },
+  "log-parsed"(d) {
+    const rows = ui.parsed || [];
+    update((st) => {
+      const w = ensureWorkout(st, ui.date);
+      rows.forEach((r, i) => {
+        if (r.error) return;
+        const pick = d[`ex${i}`] || r.exercise;
+        let ex;
+        if (pick.startsWith("new:")) {
+          const name = pick.slice(4);
+          ex = st.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
+          if (!ex) {
+            ex = { id: uid(), name, kind: "upper", muscle: undefined, repMin: Math.max(1, r.reps - 2), repMax: r.reps + 2, increment: 5, aliases: [r.name] };
+            st.exercises.push(ex);
+          }
+        } else {
+          ex = ensureExercise(st, pick);
+        }
+        if (!w.order.includes(ex.id)) w.order.push(ex.id);
+        for (let n = 0; n < r.sets; n++) w.sets.push({ id: uid(), exId: ex.id, weight: r.weight, reps: r.reps });
+      });
+    });
+    const total = rows.filter((r) => !r.error).reduce((t, r) => t + r.sets, 0);
+    ui.parsed = null;
+    ui.parsedText = "";
+    render();
+    toast(`Logged ${total} sets`);
+  },
   "scan-log"(d) {
     const k = Math.max(0.25, +d.servings || 1);
     const r1 = (v) => Math.round(num(v) * k * 10) / 10;
@@ -1549,6 +1627,7 @@ const actions = {
   rest(el) { startRest(+el.dataset.sec); },
   "open-ex"(el) { ui.openEx = el.dataset.id; render(); document.querySelector(`form[data-ex="${el.dataset.id}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" }); },
   "scan-cancel"() { ui.scan = null; render(); },
+  "parsed-edit"() { ui.parsed = null; render(); },
   "ex-pick"(el) { ui.exPick = el.dataset.name; ui.exLookup = null; render(); },
   "ex-clear"() { ui.exQuery = ""; ui.exPick = null; ui.exLookup = null; render(); },
   "ex-lookup"(el) { ui.exQuery = el.dataset.q; startLookup(el.dataset.q); },
