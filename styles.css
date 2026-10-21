@@ -525,3 +525,7 @@ textarea { -webkit-user-select: text; user-select: text; touch-action: manipulat
 .parsed-row > .sub-line { margin-left: 30px; }
 .servings-mini { flex-direction: row; align-items: center; gap: 8px; margin: 6px 0 0 30px; }
 .servings-mini input { width: 80px; text-align: center; }
+
+/* ---------- USCCB readings ---------- */
+.inline-link { font: inherit; text-transform: none; letter-spacing: 0; padding: 0; text-decoration: underline; }
+.gospel-pasted { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }

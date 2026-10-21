@@ -3,6 +3,7 @@
 import { ask } from "./ai.js";
 
 const SYSTEM = `You are a faithful Catholic spiritual writer helping a lay Catholic pray with the day's Gospel.
+Use the readings exactly as published by the USCCB (New American Bible, Revised Edition), the translation proclaimed at Mass in the United States. Quote only short phrases.
 Write in the tradition of the Church: faithful to Scripture, Sacred Tradition and the Magisterium. Draw on the Catechism of the Catholic Church (cite paragraph numbers only when you are confident of them), the Church Fathers, Doctors of the Church and the saints. Never invent quotations; if unsure of exact wording, paraphrase and say so.
 This reader is also disciplining their body — training for strength and eating with temperance to lose fat while keeping muscle — and wants to see that effort as part of their life in Christ (1 Cor 9:24–27), never as vanity.
 
@@ -18,11 +19,15 @@ One specific, doable resolution, one sentence.
 ## A short prayer
 Three to four lines.`;
 
-export async function generateReflection({ apiKey, date, liturgicalDay, gospelRef, gospelText }) {
+export async function generateReflection({ apiKey, date, liturgicalDay, readingsUrl, gospelRef, gospelText }) {
+  const content = gospelText
+    ? `Date: ${date}\nLiturgical season: ${liturgicalDay}\nGospel (NABRE, from the USCCB): ${gospelRef || ""}\n\n${gospelText}`
+    : `Date: ${date}\nLiturgical season: ${liturgicalDay}\nToday's readings from the USCCB: ${readingsUrl}\n\nFetch that page, find the Gospel, and write the reflection on it. Name the Gospel reference at the start.`;
   return ask({
     apiKey,
     system: SYSTEM,
-    content: `Date: ${date}\nLiturgical day: ${liturgicalDay}\nGospel: ${gospelRef}\n\n${gospelText}`,
+    content,
+    tools: gospelText ? undefined : [{ type: "web_fetch_20260209", name: "web_fetch", max_uses: 2, allowed_domains: ["bible.usccb.org"] }],
   });
 }
 

@@ -69,7 +69,7 @@ No program can promise you'll never plateau, especially while cutting. These are
 
 ### ✝️ Faith: *The Disciplined Disciple*
 A rule of life built for a Catholic who trains:
-- **Daily Gospel**, loaded automatically from the Universalis Mass feed. There's a link to the USCCB readings for the same day, and you can paste the text yourself if you're offline.
+- **Daily readings from the USCCB** (New American Bible, Revised Edition, as proclaimed at Mass in the U.S.). The app links to that day's readings on bible.usccb.org; you can paste the Gospel to keep it with your prayer. Scripture quoted elsewhere in the app also uses the NABRE.
 - **Catholic reflection (optional):** an AI-written commentary on the day's Gospel that draws on the Fathers, the saints, and the Catechism, and ends with a resolution and a short prayer. It needs your own Anthropic API key, which stays on your device. It's meant as an aid to prayer, not as Church teaching.
 - **Lectio Divina** journal: Read, Reflect, Respond, Rest.
 - **Daily rule checklist:** Morning Offering, Gospel, Angelus (Regina Caeli during Easter), offered workout, Rosary (with the mysteries for the day), temperance at table, and the evening Examen. The workout and temperance boxes check themselves from your logs. Keep 5 of the 7 to build a streak.
@@ -96,7 +96,7 @@ Everything is stored in your browser's `localStorage`. Use **Me → Export** reg
 ## Security and privacy
 
 - Your data (food, workouts, weight, prayers, API key) lives only in your phone's app storage. The repository holds the app's code, never your data.
-- A Content-Security-Policy only lets the page load code from itself, Google Fonts, the Universalis Gospel feed, the jsDelivr copy of the Anthropic SDK, and the Anthropic API. Everything else is blocked.
+- A Content-Security-Policy only lets the page load code from itself, Google Fonts, the jsDelivr copy of the Anthropic SDK, and the Anthropic API. Everything else is blocked.
 - Optional PIN lock (Me → Privacy and security). It's asked for on every launch and after 5 minutes in the background. It's a privacy lock, not encryption.
 - The app asks the browser for persistent storage so your data isn't cleared automatically. Back up regularly with Me → Export; the app reminds you after 14 days.
 
