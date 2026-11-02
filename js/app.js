@@ -1,7 +1,7 @@
 import { getState, update, save, subscribe, uid, dateKey, addDays, parseKey, exportJSON, importJSON } from "./store.js";
 import { computeTargets, totals, weightTrend, latestWeight, movingAverage, weeklyAdherence, paceVerdict, ACTIVITY_LEVELS, GOALS, RATE_OPTIONS } from "./nutrition.js";
 import { suggestNext, history as sessionsFor, bestE1rm, isPR, strengthSummary, setFeedback, exerciseVerdict, e1rm, workingWeight } from "./lifts.js";
-import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE, substitutesFor } from "./exercise-db.js";
+import { matchExercise, exerciseInfo, MATCH_SURE, MATCH_MAYBE, substitutesFor, sameJob } from "./exercise-db.js";
 import { parseWorkoutText, parseMaxes } from "./workout-text.js";
 import { APP_VERSION } from "./version.js";
 import { RAISE, mobilityFor, warmupSets, stretchesFor, STRETCHES, BREATHING, dayKind, WARMUP_EVIDENCE, STRETCH_EVIDENCE, SAUNA_LEVELS, saunaPlan, SAUNA_BENEFITS, SAUNA_AVOID, SAUNA_STOP, SAUNA_MAX_MIN, AB_ROUTINES, AB_NOTES, CARDIO_TYPES, CARDIO_OPTIONS, caloriesBurned } from "./recovery.js";
@@ -943,7 +943,7 @@ function renderTrain(s) {
       <details><summary>Athlete's offering prayer</summary><p class="prayer">${PRAYERS.athletesOffering}</p></details>
     </section>
 
-    ${order.map((id) => exerciseCard(s, exById[id], w, key, id === openId))}
+    ${order.map((id) => html`${replaceHint(s, w, exById[id], exById)}${exerciseCard(s, exById[id], w, key, id === openId)}`)}
 
     ${w.removed?.length ? html`
       <section class="card removed-card">
@@ -1448,6 +1448,34 @@ function warmupFor(s, ex, w, rxItem, sug, nextWeight) {
   const target = +nextWeight || sug.weight;
   const plan = warmupSets({ workWeight: target, workReps: rxItem?.repMin ?? ex.repMin, equipment, warm, increment: ex.increment });
   return { ...plan, targetLabel: `${target} lb` };
+}
+
+// An exercise added on top of the plan that does the same job as a planned lift that isn't finished
+// (Smith incline press vs. incline dumbbell press). Doing both doubles up, so ask which it is.
+function plannedTwin(w, ex, exById) {
+  const items = w.plan?.items || [];
+  if (!ex || items.some((i) => i.exId === ex.id)) return null;
+  return items.find((i) => !i.extra && !i.detail && exById[i.exId]
+    && w.sets.filter((x) => x.exId === i.exId).length < i.sets
+    && !(w.keepBoth || []).includes(`${i.exId}>${ex.id}`)
+    && sameJob(exById[i.exId].name, ex.name)) || null;
+}
+
+function replaceHint(s, w, ex, exById) {
+  const item = plannedTwin(w, ex, exById);
+  if (!item) return "";
+  const old = exById[item.exId];
+  const done = w.sets.filter((x) => x.exId === old.id).length;
+  return html`
+    <section class="card replace-hint" id="replace-${ex.id}">
+      <p class="line"><strong>Is ${ex.name} replacing ${old.name} today?</strong> They do the same job, so doing both would double up.</p>
+      <p class="hint">${done ? `You've done ${done} of ${item.sets} sets of ${old.name}; replacing moves the other ${item.sets - done} to ${ex.name}.` : `Replacing gives ${ex.name} its ${item.sets} × ${item.repMin}–${item.repMax} sets and takes ${old.name} off today's list.`}</p>
+      ${s.program && !done ? html`<label class="check"><input type="checkbox" name="always"> Use ${ex.name} every time the program calls for ${item.swappedFrom || old.name}</label>` : ""}
+      <div class="set-actions">
+        <button type="button" class="btn" data-action="replace-planned" data-old="${old.id}" data-new="${ex.id}">Replace it</button>
+        <button type="button" class="btn ghost" data-action="keep-both" data-old="${old.id}" data-new="${ex.id}">Keep both</button>
+      </div>
+    </section>`;
 }
 
 // Change an exercise for today: a suggested same-muscle substitute, anything from the saved
@@ -2104,7 +2132,9 @@ function swapExercise(fromId, toName, always) {
     const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])];
     const done = w.sets.filter((x) => x.exId === from.id).length;
     if (done) {
-      if (!order.includes(to.id)) order.splice(order.indexOf(from.id) + 1, 0, to.id);
+      // Put the new lift right after the one it continues.
+      if (order.includes(to.id)) order.splice(order.indexOf(to.id), 1);
+      order.splice(order.indexOf(from.id) + 1, 0, to.id);
       w.order = order;
       // The sets already logged stay with the old lift; the rest move to the new one.
       if (rxItem && !rxItem.detail && !w.plan.items.some((i) => i.exId === to.id)) {
@@ -2382,7 +2412,7 @@ const forms = {
     ui.chartEx = d.exId;
     ui.openEx = d.exId;
     render();
-    document.querySelector(`form[data-ex="${d.exId}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" });
+    (document.getElementById(`replace-${d.exId}`) || document.querySelector(`form[data-ex="${d.exId}"]`)?.closest(".card"))?.scrollIntoView({ block: "start", behavior: "smooth" });
   },
   set(d, form) {
     const set = { id: uid(), exId: form.dataset.ex, weight: +d.weight, reps: +d.reps };
@@ -2627,6 +2657,16 @@ const actions = {
   "swap-ex"(el) {
     swapExercise(el.dataset.from, el.dataset.to, !!el.closest("details")?.querySelector('input[name="always"]')?.checked);
   },
+  "replace-planned"(el) {
+    const s = getState();
+    const ex = s.exercises.find((e) => e.id === el.dataset.new);
+    if (!ex) return;
+    swapExercise(el.dataset.old, ex.name, !!el.closest("section")?.querySelector('input[name="always"]')?.checked);
+  },
+  "keep-both"(el) {
+    update((st) => { (ensureWorkout(st, ui.date).keepBoth ??= []).push(`${el.dataset.old}>${el.dataset.new}`); });
+    toast("Keeping both");
+  },
   "remove-ex"(el) {
     const id = el.dataset.id;
     const s = getState();
@@ -2686,13 +2726,17 @@ const actions = {
   "ex-lookup"(el) { ui.exQuery = el.dataset.q; startLookup(el.dataset.q); },
   "add-known"(el) {
     const info = exerciseInfo(el.dataset.name);
+    let id;
     update((st) => {
       const ex = ensureExercise(st, el.dataset.name, info?.repMin ?? 8, info?.repMax ?? 12);
       addToToday(st, ex.id);
+      id = ex.id;
     });
     ui.exQuery = ""; ui.exPick = null;
     render();
-    toast(`Added ${el.dataset.name}`);
+    const hint = document.getElementById(`replace-${id}`);
+    hint?.scrollIntoView({ block: "start", behavior: "smooth" });
+    toast(hint ? `Added ${el.dataset.name}. Is it replacing something?` : `Added ${el.dataset.name}`);
   },
   async reflect() {
     const s = getState();

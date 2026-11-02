@@ -592,6 +592,12 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .remove-ex { margin-top: 12px; color: var(--bad); border-color: var(--line); }
 .lib-add { margin-top: 12px; }
 
+/* Jumps to a card stop below the sticky header and tabs instead of underneath them. */
+html { scroll-padding-top: 112px; }
+.replace-hint { border-left: 3px solid var(--warn); background: var(--warn-bg); }
+.replace-hint .line { color: var(--ink); }
+.replace-hint .set-actions { margin-top: 10px; }
+
 /* ---------- finisher sheet & extras ---------- */
 .sheet-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); z-index: 30; }
 .sheet {
