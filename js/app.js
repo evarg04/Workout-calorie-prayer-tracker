@@ -978,30 +978,20 @@ function renderTrain(s) {
 const saunaReady = (s) => !!(s.profile.sauna?.enabled && s.profile.sauna?.ackDate);
 
 // True once every exercise the program prescribed today has all its sets.
-function programComplete(w) {
-  const items = w.plan?.items || [];
-  return items.length > 0 && items.every((i) => w.sets.filter((x) => x.exId === i.exId).length >= i.sets);
-}
-
 // Prescribed lifts (not the optional ab add-ons) that still have sets left.
 function openItems(w) {
   return (w.plan?.items || []).filter((i) => !i.extra && w.sets.filter((x) => x.exId === i.exId).length < i.sets);
 }
 
-// The workout counts as finished when its last prescribed lift is done, even if a set was skipped earlier.
-function lastLiftDone(w) {
-  const main = (w.plan?.items || []).filter((i) => !i.extra);
-  if (!main.length) return false;
-  const pos = (id) => { const k = (w.order || []).indexOf(id); return k < 0 ? Infinity : k; };
-  const last = main.reduce((a, b) => (pos(b.exId) >= pos(a.exId) ? b : a));
-  return w.sets.filter((x) => x.exId === last.exId).length >= last.sets;
-}
+const setsLeft = (w) => openItems(w).reduce((n, i) => n + i.sets - w.sets.filter((x) => x.exId === i.exId).length, 0);
 
 function finisherSection(s, w) {
   const extras = w.extras || {};
   const weight = latestWeight(s.weights) || s.profile.weightLb;
   return html`
-    ${!w.finished ? html`<button type="button" class="btn ghost full finish-btn" data-action="finish-open">Finish workout</button>`
+    ${!w.finished ? (openItems(w).length
+        ? html`<button type="button" class="btn ghost full finish-btn" data-action="finish-early">End workout early · ${setsLeft(w)} set${setsLeft(w) === 1 ? "" : "s"} left</button>`
+        : html`<button type="button" class="btn ghost full finish-btn" data-action="finish-open">Finish workout</button>`)
       : html`<button type="button" class="btn ghost full finish-btn" data-action="wrap-up">${w.wrapped ? "See today's summary" : "Wrap up and see my summary"}</button>
         ${extrasLeft(s, w).length ? html`<button type="button" class="finish-more" data-action="finish-open">Add ${listWords(extrasLeft(s, w).map((k) => EXTRA_NAME[k]))}</button>` : ""}`}
     ${extras.abs ? abCard(s) : ""}
@@ -1030,13 +1020,13 @@ function finisherSheet(s, w, stage = "start") {
   };
   const head = stage === "next"
     ? [`${ui.justDid === "cardio" ? "Cardio" : "Abs"} done. Great job.`, left.length ? "Anything else, or call it a day? Either is a good choice." : ""]
-    : ["Workout complete. Nice work.", "Want to add anything? Totally optional. Rest is part of training too."];
+    : [openItems(w).length ? "Good work today." : "Workout complete. Nice work.", "Want to add anything? Totally optional. Rest is part of training too."];
   return html`
     <div class="sheet-backdrop" data-action="finish-close"></div>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
       <h2 id="sheet-title">${head[0]}</h2>
       ${head[1] ? html`<p class="hint">${head[1]}</p>` : ""}
-      ${stage === "start" && openItems(w).length ? html`<p class="hint">A few sets were left on ${listAnd(openItems(w).map((i) => `${i.name} (${w.sets.filter((x) => x.exId === i.exId).length} of ${i.sets})`))}. That's fine. Log them first if you want, or finish now.</p>` : ""}
+      ${stage === "start" && openItems(w).length ? html`<p class="hint">You're ending with sets left on ${listAnd(openItems(w).map((i) => `${i.name} (${w.sets.filter((x) => x.exId === i.exId).length} of ${i.sets})`))}. That's fine; some days are like that.</p>` : ""}
       ${left.length ? html`<div class="sheet-options">${left.map((k) => opt[k])}</div>` : ""}
       <button type="button" class="btn full" data-action="finish-pick" data-pick="done">${stage === "next" ? "Wrap up and see my summary" : "I'm done for today"}</button>
     </div>`[RAW];
@@ -1594,9 +1584,9 @@ function exerciseCard(s, ex, w, key, open = true) {
 
       ${done && ui.extraSet !== ex.id ? html`
         <div class="done-panel">
-          <p><strong>All ${rxItem.sets} sets done.</strong> ${!openItems(w).length ? "Nice work." : lastLiftDone(w) ? `That was the last lift. ${openItems(w)[0].name} has a set left if you want it.` : `Next: ${openItems(w)[0].name}.`}</p>
+          <p><strong>All ${rxItem.sets} sets done.</strong> ${!openItems(w).length ? "That's every set. Nice work." : `Next: ${openItems(w)[0].name}.`}</p>
           <div class="set-actions">
-            ${!openItems(w).length || lastLiftDone(w) ? html`<button type="button" class="btn" data-action="${w.finished ? "wrap-up" : "finish-open"}">${w.finished ? "See today's summary" : "Finish workout"}</button>` : html`<button type="button" class="btn" data-action="open-ex" data-id="${openItems(w)[0].exId}">Go to ${openItems(w)[0].name}</button>`}
+            ${!openItems(w).length ? html`<button type="button" class="btn" data-action="${w.finished ? "wrap-up" : "finish-open"}">${w.finished ? "See today's summary" : "Finish workout"}</button>` : html`<button type="button" class="btn" data-action="open-ex" data-id="${openItems(w)[0].exId}">Go to ${openItems(w)[0].name}</button>`}
             <button type="button" class="btn ghost" data-action="extra-set" data-id="${ex.id}">Log an extra set</button>
           </div>
         </div>` : html`
@@ -2421,13 +2411,13 @@ const forms = {
     let justFinished = false, absDone = false;
     update((s) => {
       const w = ensureWorkout(s, ui.date);
-      const wasComplete = programComplete(w);
       w.sets.push(set);
       const rxItem = w.plan?.items?.find((i) => i.exId === set.exId);
       if (w.sets.filter((x) => x.exId === set.exId).length >= (rxItem?.sets ?? 99)) ui.openEx = null;
       const item = w.plan?.items?.find((i) => i.exId === set.exId && !i.extra);
       const exJustDone = item && w.sets.filter((x) => x.exId === set.exId).length === item.sets;
-      justFinished = !w.finished && ((!wasComplete && programComplete(w)) || (exJustDone && (lastLiftDone(w) || !openItems(w).length)));
+      // "Workout complete" only once every prescribed set on the page is done.
+      justFinished = !w.finished && exJustDone && !openItems(w).length;
       const abs = (w.plan?.items || []).filter((i) => i.extra);
       absDone = !justFinished && w.finished && !w.wrapped && abs.some((i) => i.exId === set.exId) && abs.every((i) => w.sets.filter((x) => x.exId === i.exId).length >= i.sets);
     });
@@ -2624,6 +2614,12 @@ const actions = {
     toast(`${GOALS[goal].short}: ${t.calories.toLocaleString()} kcal, ${t.protein} g protein a day`);
   },
   "finish-open"() { showFinisherSheet(); },
+  "finish-early"() {
+    const w = workoutFor(getState(), ui.date);
+    const left = openItems(w);
+    if (left.length && !confirm(`${setsLeft(w)} set${setsLeft(w) === 1 ? "" : "s"} left (${left.map((i) => i.name).join(", ")}). End the workout anyway?`)) return;
+    showFinisherSheet();
+  },
   "finish-close"() { closeFinisherSheet(); },
   "wrap-up"() { update((st) => { ensureWorkout(st, ui.date).wrapped = true; }); showSummary(); },
   "finish-pick"(el) {
