@@ -87,6 +87,7 @@ Pick one and the app loads each day's workout, with sets, reps, and rest times:
 - A deload week is scheduled every 6–8 weeks; 5/3/1 has its own deload built in.
 - A **weekly volume** check shows hard sets per muscle against the 10–20 sets/week range research supports.
 - A **rest timer** starts on its own after each set (FST-7 finishers use 30–45 s).
+- Exercises you add yourself (outside a program) get a set count and rest time too: 3 sets by default, with rest based on the rep range (3 min for 6 reps or fewer, 2 min up to 10, 90 s above). Change them under **Sets and rest** on the exercise; it sticks for next time. After the last set the exercise closes, and when everything on a freestyle list is done the workout wraps up.
 
 No program can promise you'll never plateau, especially while cutting. These are the tools that prevent most stalls and get you past the rest.
 
