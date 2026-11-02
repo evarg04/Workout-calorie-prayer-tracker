@@ -5,7 +5,7 @@
 import { PREP } from "./recipe-steps.js";
 
 // name: [kcal, protein, carbs, fat, flags]   flags: m=meat f=fish d=dairy e=egg g=gluten
-const ING = {
+export const ING = {
   "chicken breast (raw)": [120, 22.5, 0, 2.6, "m"],
   "93% lean ground turkey (raw)": [150, 18.7, 0, 8.3, "m"],
   "93% lean ground beef (raw)": [152, 21, 0, 7, "m"],

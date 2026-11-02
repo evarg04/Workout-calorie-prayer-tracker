@@ -262,3 +262,63 @@ export async function findRestaurantNutrition({ apiKey, restaurant, order }) {
   if (!items.length) throw new Error("Couldn't find nutrition for that order. Try adding sizes or the exact menu names.");
   return { restaurant: String(r.restaurant || restaurant).slice(0, 80), items, notes: String(r.notes || "").slice(0, 300) };
 }
+
+// ---------- "What can I make?" AI chef ----------
+
+const CHEF_SYSTEM = `You are a sports-nutrition-minded home cook for a fitness app. Create ONE simple recipe from the ingredients the user has.
+Rules:
+- Use only the listed ingredients, plus salt, pepper, dried herbs and spices, water, lemon or lime juice, vinegar, mustard, hot sauce and cooking spray. Don't add anything else. You don't have to use everything.
+- Hit the target macros as closely as you can by choosing gram amounts. Protein matters most; never go far over the calories.
+- Pre-workout: easy to digest, low fat and low fiber, eaten 60–90 minutes before training. Post-workout: protein first, plus carbs. Meal: balanced plate with vegetables if available. Snack: small and protein-first.
+- For any ingredient that appears in the "app ingredients" list, use that exact name so the app can compute exact macros. For other ingredients, give per-100 g calories, protein, carbs and fat from USDA FoodData Central values for that food as eaten.
+- Give gram amounts per serving (weigh meat and fish raw). Steps must be clear enough for a beginner, with times, temperatures and USDA safe internal temperatures for meat and fish (poultry 165°F, ground beef 160°F, fish 145°F).
+- Respect the diet. If something the user listed breaks it, leave it out and say so in notes.`;
+
+const CHEF_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["name", "minutes", "why", "ingredients", "steps", "notes"],
+  properties: {
+    name: { type: "string" },
+    minutes: { type: "number" },
+    why: { type: "string" },
+    ingredients: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false,
+        required: ["name", "grams", "per100"],
+        properties: {
+          name: { type: "string" },
+          grams: { type: "number" },
+          per100: {
+            type: "object", additionalProperties: false, required: ["cal", "p", "c", "f"],
+            properties: { cal: { type: "number" }, p: { type: "number" }, c: { type: "number" }, f: { type: "number" } },
+          },
+        },
+      },
+    },
+    steps: { type: "array", items: { type: "string" } },
+    notes: { type: "string" },
+  },
+};
+
+// Known ingredients get exact macros from the app's USDA table; anything else uses the model's per-100 g values and is marked estimated.
+export async function chefFromPantry({ apiKey, typeLabel, typeRule, have, unknown, extra, target, dietLabel, meatless, known }) {
+  const content = `Make a ${typeLabel.toLowerCase()} (${typeRule})
+Target for this one serving: about ${target.cal} kcal, ${target.p} g protein, ${target.c} g carbs, ${target.f} g fat.
+Diet: ${dietLabel}${meatless ? ". Today is a day of abstinence from meat (fish is fine)." : "."}
+Ingredients I have: ${[...have, ...unknown].join(", ")}
+${extra ? `Also: ${extra}` : ""}
+App ingredients (use these exact names when they match): ${known.join("; ")}`;
+  const text = await ask({ apiKey, system: CHEF_SYSTEM, content, effort: "medium", format: { type: "json_schema", schema: CHEF_SCHEMA } });
+  const r = JSON.parse(text);
+  const num = (v) => (Number.isFinite(+v) && +v >= 0 ? +v : 0);
+  const items = (r.ingredients || []).slice(0, 15).map((i) => ({
+    name: String(i.name).slice(0, 80), g: Math.round(num(i.grams)),
+    per100: { cal: num(i.per100?.cal), p: num(i.per100?.p), c: num(i.per100?.c), f: num(i.per100?.f) },
+  })).filter((i) => i.g > 0);
+  if (!items.length) throw new Error("No recipe came back. Try listing a few more ingredients.");
+  return {
+    name: String(r.name || "Your recipe").slice(0, 100), minutes: num(r.minutes), why: String(r.why || "").slice(0, 300),
+    items, steps: (r.steps || []).map(String).slice(0, 12), notes: String(r.notes || "").slice(0, 300),
+  };
+}

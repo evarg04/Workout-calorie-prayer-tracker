@@ -8,10 +8,11 @@ import { RAISE, mobilityFor, warmupSets, stretchesFor, STRETCHES, BREATHING, day
 import { liturgicalDay, penanceNote, mysteriesFor, PRAYERS, EXAMEN, LECTIO, virtueOfWeek, usccbUrl } from "./liturgy.js";
 import { lineChart } from "./chart.js";
 import { generateReflection, renderMarkdown } from "./reflect.js";
-import { DIETS } from "./recipes.js";
+import { DIETS, ING } from "./recipes.js";
+import { COOK_TYPES, parsePantry, suggest, cookTarget, whyItFits, describe, shortName } from "./cook.js";
 import { SLOTS, buildPlan, swapSlot, hydrate, planTotals, recipePool, scaled, groceryList } from "./mealplan.js";
 import { PROGRAMS, CATALOG, MUSCLES, todaysSession, weeklyVolume, round5, sessionsBefore } from "./programs.js";
-import { findWebRecipes, lookupExercise, askCoach, readNutrition, photoToBase64, getClient, findRestaurantNutrition } from "./ai.js";
+import { findWebRecipes, lookupExercise, askCoach, readNutrition, photoToBase64, getClient, findRestaurantNutrition, chefFromPantry } from "./ai.js";
 
 // ---------- tiny templating: interpolations are escaped unless wrapped in raw() ----------
 const RAW = Symbol("raw");
@@ -24,7 +25,7 @@ const ui = { tab: location.hash.slice(1) || "today", date: dateKey(), chartEx: n
   sub: { food: "menu", train: "workout", faith: "today" } };
 
 const SUBS = {
-  food: [["menu", "Menu"], ["log", "Log"], ["recipes", "Find recipes"]],
+  food: [["menu", "Menu"], ["log", "Log"], ["cook", "What to make"], ["recipes", "Find recipes"]],
   train: [["workout", "Workout"], ["progress", "Progress"], ["programs", "Programs"], ["recovery", "Recovery"]],
   faith: [["today", "Today"], ["pray", "Pray"], ["ledger", "Ledger"]],
 };
@@ -503,6 +504,106 @@ async function startScan(file) {
   render();
 }
 
+// ---------- what can I make? ----------
+
+const cookPrefs = (s) => ({ type: "post", text: "", staples: true, ...s.cook });
+
+function defaultMeal(type) {
+  if (type === "pre" || type === "snack") return "Snacks";
+  const h = new Date().getHours() + new Date().getMinutes() / 60;
+  return h < 10.5 ? "Breakfast" : h < 15 ? "Lunch" : h < 21 ? "Dinner" : "Snacks";
+}
+
+function cookCard(s) {
+  const c = cookPrefs(s);
+  const cfg = COOK_TYPES[c.type];
+  const r = ui.cook?.type === c.type ? ui.cook : null;
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>What can I make?</h2></div>
+      <div class="seg-tabs cook-types" role="radiogroup" aria-label="What it's for">${Object.entries(COOK_TYPES).map(([k, v]) => html`
+        <button type="button" role="radio" aria-checked="${k === c.type}" class="${k === c.type ? "is-on" : ""}" data-action="cook-type" data-type="${k}">${v.label}</button>`)}</div>
+      <p class="hint"><strong>${cfg.when}.</strong> ${cfg.rule}</p>
+      <form data-form="cook">
+        <label>Ingredients you have<textarea name="have" rows="3" placeholder="chicken, rice, broccoli, eggs, Greek yogurt, banana" autocomplete="off">${c.text}</textarea></label>
+        <label class="check"><input type="checkbox" name="staples" ${c.staples ? "checked" : ""}> I have the basics: oil, salt, pepper and spices</label>
+        <button class="btn full" type="submit">Find my best ${cfg.label.toLowerCase()}</button>
+      </form>
+    </section>
+    <div id="cook-results">${r ? cookResults(s, r) : ""}</div>`;
+}
+
+function cookResults(s, r) {
+  const hasKey = !!s.settings.apiKey;
+  const T = r.target;
+  return html`
+    <section class="card">
+      <div class="sec-head"><h2>Aim for</h2><span class="sec-meta">${COOK_TYPES[r.type].label}</span></div>
+      <div class="macros cook-target"><strong>${T.cal}</strong> kcal<span>${T.p} g protein · ${T.c} g carbs · ${T.f} g fat</span></div>
+      ${T.note ? html`<p class="hint">${T.note}</p>` : ""}
+      ${r.have.length ? html`<div class="chips" aria-label="Ingredients the app recognized">${r.have.map((n) => html`<span class="chip">${shortName(n)}</span>`)}</div>` : ""}
+      ${r.unknown.length ? html`<p class="hint">Not in the app's food list: ${r.unknown.join(", ")}. ${hasKey ? "The AI chef below can use them." : "Add an API key on the Me tab and the AI chef can use them."}</p>` : ""}
+      ${r.skipped.length ? html`<p class="hint">Left out for your diet${r.meatless ? " and today's abstinence from meat" : ""}: ${r.skipped.map(shortName).join(", ")}.</p>` : ""}
+      ${r.noProtein ? html`<p class="small warn-text">There's no protein source in your list. Adding one (eggs, Greek yogurt, chicken, tuna, protein powder…) makes a much better ${COOK_TYPES[r.type].label.toLowerCase()}.</p>` : ""}
+    </section>
+    ${r.options.length ? r.options.map((o, i) => cookOption(o, i, r)) : html`<section class="card"><p class="muted">Nothing good fits with just these. Add a protein and a carb you have, or try the AI chef.</p></section>`}
+    <section class="card">
+      <div class="sec-head"><h2>AI chef</h2><span class="sec-meta">Optional</span></div>
+      ${hasKey ? html`
+        <p class="hint">Creates one recipe from everything you listed, including foods the app doesn't know, sized to the target above.</p>
+        <form data-form="cook-ai" class="inline">
+          <label class="grow">Anything else? (optional)<input name="extra" placeholder="no stove, 10 minutes, spicy" autocomplete="off"></label>
+          <button class="btn" type="submit" ${r.ai?.loading ? "disabled" : ""}>${r.ai?.loading ? "Cooking…" : "Ask"}</button>
+        </form>
+        ${r.ai?.error ? html`<p class="error">${r.ai.error}</p>` : ""}` : html`<p class="hint">Add your Anthropic API key on the Me tab for an AI chef that can use any ingredient and follow requests like "no stove".</p>`}
+    </section>
+    ${r.ai?.result ? cookOption(r.ai.result, "ai", r) : ""}`;
+}
+
+function cookOption(o, i, r) {
+  const m = o.macros, T = r.target;
+  const kind = { recipe: "From your recipes", built: "Built from what you have", ai: o.estimated ? "AI chef · some macros estimated" : "AI chef" }[o.kind];
+  const why = o.kind === "ai" ? [o.why].filter(Boolean) : whyItFits(r.type, m, T, r.weightLb);
+  return html`
+    <section class="card cook-opt">
+      <div class="sec-head"><h2>${o.name}</h2><span class="chip ${o.kind === "ai" ? "chip-new" : "chip-good"}">${kind}</span></div>
+      <div class="macros"><strong>${round(m.cal)}</strong> kcal<span>${round(m.p)}P · ${round(m.c)}C · ${round(m.f)}F</span></div>
+      <ul class="status-list">${why.map((x) => html`<li>${x}</li>`)}</ul>
+      ${o.missing?.length ? html`<p class="hint">This recipe also uses ${o.missing.map(shortName).join(", ").toLowerCase()}. Skip it or swap in something similar.</p>` : ""}
+      <h4>Ingredients${o.mult && o.mult !== 1 ? ` · ${o.mult}× the recipe` : ""}</h4>
+      <ul class="ingredients">${o.items.map((x) => html`<li>${describe(x.name, x.g)}</li>`)}</ul>
+      ${o.pantry?.length ? html`<h4>Seasonings</h4><ul class="ingredients">${o.pantry.map((x) => html`<li>${fmtPantry(x, o.mult || 1)}</li>`)}</ul>` : ""}
+      <h4>Steps${o.minutes ? ` · about ${o.minutes} min` : ""}</h4>
+      <ol class="steps recipe-steps">${(o.steps || []).map((x) => html`<li>${x}</li>`)}</ol>
+      ${o.kind === "recipe" && o.mult !== 1 ? html`<p class="hint">The steps are written for one serving; use the amounts above.</p>` : ""}
+      ${o.notes ? html`<p class="hint">${o.notes}</p>` : ""}
+      ${o.logged ? html`<p class="line"><span class="tag ok">Logged</span></p>` : html`
+        <form data-form="cook-log" data-i="${i}" class="inline">
+          <label class="grow">Log to<select name="meal">${MEALS.map((x) => html`<option ${x === defaultMeal(r.type) ? "selected" : ""}>${x}</option>`)}</select></label>
+          <button class="btn" type="submit">Log it</button>
+          <button type="button" class="btn ghost" data-action="cook-save" data-i="${i}">Save</button>
+        </form>`}
+    </section>`;
+}
+
+function cookOptionAt(i) {
+  return i === "ai" ? ui.cook?.ai?.result : ui.cook?.options?.[+i];
+}
+
+function runCook() {
+  const s = getState();
+  const c = cookPrefs(s);
+  const day = targetsFor(s);
+  const weightLb = latestWeight(s.weights) || s.profile.weightLb;
+  const { have, unknown } = parsePantry(c.text);
+  const target = cookTarget({ type: c.type, day, eaten: totals(s.foods[ui.date]), weightLb, losing: day.losing });
+  const meatless = isMeatless(s, ui.date);
+  const res = suggest({ type: c.type, have, staples: c.staples, diet: s.profile.diet || "everything", meatless, target });
+  ui.cook = { type: c.type, text: c.text, have, unknown, target, weightLb, meatless, ...res, ai: null };
+  render();
+  document.getElementById("cook-results")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function renderFood(s) {
   const key = ui.date;
   const target = targetsFor(s);
@@ -512,6 +613,7 @@ function renderFood(s) {
   const sub = ui.sub.food;
 
   if (sub === "recipes") return webRecipesCard(s);
+  if (sub === "cook") return cookCard(s);
 
   const summary = html`<section class="card">${macroBlock(t, target)}</section>`;
   if (sub === "menu") return html`${summary}${penanceCard(key)}${menuCard(s, key)}`;
@@ -2264,6 +2366,49 @@ const forms = {
     render();
     toast(`Logged ${total} sets`);
   },
+  cook(d) {
+    if (!d.have.trim()) return toast("List a few ingredients first");
+    update((st) => { st.cook = { ...cookPrefs(st), text: d.have.trim(), staples: !!d.staples }; });
+    runCook();
+  },
+  "cook-log"(d, form) {
+    const o = cookOptionAt(form.dataset.i);
+    if (!o || o.logged) return;
+    const r1 = (x) => Math.round(x * 10) / 10;
+    update((st) => {
+      (st.foods[ui.date] ??= []).push({ id: uid(), name: o.name, meal: d.meal, cal: round(o.macros.cal), p: r1(o.macros.p), c: r1(o.macros.c), f: r1(o.macros.f), meat: !!o.meat });
+    });
+    o.logged = true;
+    render();
+    toast(`${o.name} logged to ${d.meal}`);
+  },
+  async "cook-ai"(d) {
+    const s = getState();
+    const r = ui.cook;
+    if (!r) return;
+    const cfg = COOK_TYPES[r.type];
+    r.ai = { loading: true };
+    render();
+    try {
+      const out = await chefFromPantry({
+        apiKey: s.settings.apiKey, typeLabel: cfg.label, typeRule: `${cfg.when}. ${cfg.rule}`,
+        have: r.have, unknown: r.unknown, extra: d.extra?.trim(), target: r.target,
+        dietLabel: DIETS[s.profile.diet || "everything"].label, meatless: r.meatless, known: Object.keys(ING),
+      });
+      let estimated = false;
+      const m = { cal: 0, p: 0, c: 0, f: 0 };
+      for (const it of out.items) {
+        const row = ING[it.name];
+        const per = row ? { cal: row[0], p: row[1], c: row[2], f: row[3] } : (estimated = true, it.per100);
+        for (const k of ["cal", "p", "c", "f"]) m[k] += (per[k] * it.g) / 100;
+      }
+      const meat = out.items.some((it) => ING[it.name]?.[4].includes("m") || /chicken|beef|pork|turkey|steak|bacon|ham|sausage/i.test(it.name));
+      if (ui.cook === r) r.ai = { result: { kind: "ai", ...out, macros: m, estimated, meat } };
+    } catch (err) {
+      if (ui.cook === r) r.ai = { error: err.message };
+    }
+    render();
+  },
   async "find-restaurant"(d) {
     const restaurant = d.restaurant.trim(), order = d.order.trim();
     if (!restaurant || !order) return toast("Add the restaurant and what you got");
@@ -2521,6 +2666,16 @@ const actions = {
   "protein-basis"(el) {
     update((st) => { st.profile.proteinBasis = el.dataset.basis; });
     toast(`Protein: ${targetsFor(getState()).protein} g a day`);
+  },
+  "cook-type"(el) {
+    update((st) => { st.cook = { ...cookPrefs(st), type: el.dataset.type }; });
+    if (cookPrefs(getState()).text) runCook();
+  },
+  "cook-save"(el) {
+    const o = cookOptionAt(el.dataset.i);
+    if (!o) return;
+    update((st) => { st.savedFoods.push({ name: o.name, cal: round(o.macros.cal), p: round(o.macros.p), c: round(o.macros.c), f: round(o.macros.f) }); });
+    toast("Saved to My foods for one-tap logging");
   },
   "set-goal"(el) {
     const goal = el.dataset.goal;

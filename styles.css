@@ -571,6 +571,13 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .sub-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .swaps { margin-top: 8px; }
 
+/* ---------- what can I make ---------- */
+.cook-types button { padding: 10px 0; font-size: 12px; }
+.cook-target { margin: 2px 0 8px; }
+.cook-opt h4 { margin: 14px 0 4px; }
+.cook-opt .status-list { margin-top: 6px; }
+.cook-opt form.inline { margin-top: 12px; }
+
 /* ---------- goal picker ---------- */
 .goal-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 12px; }
 .goal-opt { text-align: left; padding: 12px; min-height: 58px; cursor: pointer; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; font: inherit; }
