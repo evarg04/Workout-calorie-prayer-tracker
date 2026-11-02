@@ -587,6 +587,11 @@ details.card[open] > .card-summary { margin-bottom: 10px; }
 .math-steps .eyebrow { display: block; margin-bottom: 2px; }
 .math-steps .sub-line { display: block; margin-top: 3px; }
 
+.swap-head { margin: 12px 0 4px; font: 700 12px/1.2 var(--f-num); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); }
+.swap form.inline { margin-bottom: 8px; }
+.remove-ex { margin-top: 12px; color: var(--bad); border-color: var(--line); }
+.lib-add { margin-top: 12px; }
+
 /* ---------- finisher sheet & extras ---------- */
 .sheet-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 0.45); z-index: 30; }
 .sheet {
