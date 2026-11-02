@@ -68,6 +68,12 @@ const RAW = [
     ["Flaring elbows to 90°", "Bouncing off the chest", "Lifting the butt off the bench"]],
   ["Incline Barbell Press", ["incline bench", "incline bench press", "incline bb press"], "upper", "chest", ["shoulders", "triceps"], "Barbell, incline bench", 5, 6, 10,
     ["Set the bench to about 30°. Shoulder blades back and down.", "Lower the bar to your upper chest.", "Press straight up."], ["Low incline (30°) for upper chest", "Elbows slightly tucked"], ["Bench too steep (becomes a shoulder press)", "Bouncing"]],
+  ["Smith Machine Incline Press", ["smith incline", "smith incline press", "smith machine incline bench", "smith machine incline bench press", "incline smith press", "incline smith machine press", "smith incline bench"], "upper", "chest", ["shoulders", "triceps"], "Smith machine, incline bench", 5, 6, 10,
+    ["Set the bench to about 30° and slide it under the bar so it lines up with your upper chest.", "Unrack by twisting the bar, shoulder blades back and down.", "Lower under control to the upper chest.", "Press up; the track keeps the bar path fixed."],
+    ["Low incline (30°) for upper chest", "Bench placed so the bar touches the upper chest"], ["Bench too steep (becomes a shoulder press)", "Bench too far forward or back, so the bar lands on the neck or mid-chest"]],
+  ["Smith Machine Bench Press", ["smith bench", "smith bench press", "smith machine flat bench", "flat smith press"], "upper", "chest", ["triceps", "shoulders"], "Smith machine, flat bench", 5, 6, 10,
+    ["Set a flat bench so the bar lines up with your lower chest.", "Unrack, shoulder blades pinned back and down.", "Lower to the lower chest.", "Press up along the fixed track."],
+    ["Shoulder blades pinned", "Bench placed so the bar lands on the lower chest"], ["Bouncing off the chest", "Flaring elbows straight out"]],
   ["Flat Dumbbell Press", ["dumbbell bench press", "db bench", "db press", "flat db press", "dumbbell press"], "upper", "chest", ["triceps", "shoulders"], "Dumbbells, bench", 5, 8, 12,
     ["Kick the dumbbells up off your knees and lie back.", "Lower until the dumbbells are beside your chest with a deep stretch.", "Press up and slightly together."], ["Deep stretch at the bottom", "Control the lowering"], ["Half reps", "Letting the dumbbells drift too wide"]],
   ["Incline Dumbbell Press", ["incline db press", "incline dumbbell bench"], "upper", "chest", ["shoulders", "triceps"], "Dumbbells, incline bench", 5, 8, 12,
@@ -292,7 +298,9 @@ const SUBS = [
   ["Bench Press", [["Flat Dumbbell Press", "Same press with dumbbells; good if the bench is taken."], ["Machine Chest Press", "Machine version; no spotter needed."]]],
   ["Incline Barbell Press", [["Incline Dumbbell Press", "Same incline with dumbbells and a deeper stretch."], ["Machine Chest Press", "Set the seat low to bias the upper chest."]]],
   ["Flat Dumbbell Press", [["Bench Press", "Barbell version; easier to load heavy."], ["Machine Chest Press", "Stable machine press for the same muscles."]]],
-  ["Incline Dumbbell Press", [["Incline Barbell Press", "Barbell incline for heavier loading."], ["Machine Chest Press", "Machine press with the seat set low."]]],
+  ["Incline Dumbbell Press", [["Incline Barbell Press", "Barbell incline for heavier loading."], ["Smith Machine Incline Press", "Same incline on a fixed track; easy to load and no spotter needed."]]],
+  ["Smith Machine Incline Press", [["Incline Dumbbell Press", "Free-weight incline with a deeper stretch."], ["Incline Barbell Press", "Barbell incline without the fixed track."]]],
+  ["Smith Machine Bench Press", [["Bench Press", "Free barbell version of the same press."], ["Flat Dumbbell Press", "Dumbbell press with a deeper stretch."]]],
   ["Close-Grip Bench Press", [["JM Press", "Barbell triceps press with a similar groove."], ["Dips", "Stay upright to bias the triceps."]]],
   ["Dips", [["Flat Dumbbell Press", "Chest press without the shoulder stretch of dips."], ["Close-Grip Bench Press", "Barbell press hitting chest and triceps."]]],
   ["Pec Deck Fly", [["Cable Crossover", "Same fly motion on cables."], ["Flat Dumbbell Press", "Pressing alternative if no fly station is open."]]],
@@ -352,4 +360,42 @@ export function substitutesFor(ex) {
   const muscle = ex.muscle || exerciseInfo(ex.name)?.muscle;
   return EXERCISES.filter((e) => e.muscle === muscle && e.name !== ex.name).slice(0, 2)
     .map((e) => ({ name: e.name, why: `Also trains the ${muscle}.` }));
+}
+
+// What job an exercise does in a workout: two lifts with the same movement pattern can stand in
+// for each other (Smith incline press for incline dumbbell press), different ones can't
+// (lateral raise vs. shoulder press).
+const PATTERNS = [
+  ["triceps", /pushdown|skull|triceps|tricep|jm press|close-grip|kickback/i],
+  ["incline-press", /incline/i, /press|bench/i],
+  ["decline-press", /decline/i, /press|bench/i],
+  ["overhead-press", /overhead press|shoulder press|military|\bohp\b|arnold|push press/i],
+  ["chest-fly", /\bfly|flye|pec deck|crossover/i],
+  ["flat-press", /bench press|chest press|dumbbell press|smith machine bench|floor press|push-?up/i],
+  ["dip", /\bdips?\b/i],
+  ["row", /\brow\b/i, null, /upright/i],
+  ["vertical-pull", /pulldown|pull-?up|chin-?up|pull down/i],
+  ["pullover", /pullover|straight.arm/i],
+  ["lateral-raise", /lateral raise|side raise/i],
+  ["rear-delt", /rear delt|reverse fly|face pull/i],
+  ["leg-curl", /leg curl|hamstring curl|nordic/i],
+  ["biceps-curl", /curl/i, null, /leg|hamstring|wrist/i],
+  ["hinge", /deadlift|\brdl\b|romanian|good morning|hip hinge/i],
+  ["hip-thrust", /hip thrust|glute bridge/i],
+  ["single-leg", /split squat|lunge|step-?up/i],
+  ["squat", /squat|leg press|hack/i],
+  ["leg-extension", /leg extension|sissy/i],
+  ["calf", /calf|calves/i],
+  ["abs", /crunch|plank|leg raise|ab wheel|dead bug|pallof|sit-?up/i],
+];
+
+export function movementOf(name) {
+  const n = String(name);
+  return PATTERNS.find(([, a, b, not]) => a.test(n) && (!b || b.test(n)) && (!not || !not.test(n)))?.[0] || null;
+}
+
+export function sameJob(a, b) {
+  if (!a || !b || a.toLowerCase() === b.toLowerCase()) return false;
+  const m = movementOf(a);
+  return !!m && m === movementOf(b);
 }
