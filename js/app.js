@@ -909,6 +909,8 @@ function renderTrain(s) {
             <label>Main muscle<select name="muscle">${MUSCLES.map((m) => html`<option value="${m}">${cap(m)}</option>`)}</select></label>
             <label>Min reps<input name="repMin" type="number" min="1" value="6"></label>
             <label>Max reps<input name="repMax" type="number" min="1" value="10"></label>
+            <label>Sets<input name="sets" type="number" min="1" max="20" value="3"></label>
+            <label>Rest<select name="rest"><option value="">Auto</option>${REST_CHOICES.map((r) => html`<option value="${r}">${fmtRest(r)}</option>`)}</select></label>
             <label class="span2">Increment (lb)<input name="increment" type="number" step="0.5" min="0" value="5"></label>
             <button class="btn span2" type="submit">Add to library</button>
           </form>
@@ -919,9 +921,7 @@ function renderTrain(s) {
   const prog = s.program && PROGRAMS[s.program.id];
   // One exercise is open for logging at a time: the one you picked, else the first unfinished.
   const isDone = (id) => {
-    const n = w.sets.filter((x) => x.exId === id).length;
-    const rxItem = w.plan?.items?.find((i) => i.exId === id);
-    return rxItem ? n >= rxItem.sets : n >= 3;
+    return setsDone(w, id) >= goalFor(w, exById[id]).sets;
   };
   const openId = order.includes(ui.openEx) ? ui.openEx : order.find((id) => !isDone(id)) || order[order.length - 1];
   return html`
@@ -976,6 +976,29 @@ function renderTrain(s) {
 // ---------- after the workout: optional abs, cardio, sauna ----------
 
 const saunaReady = (s) => !!(s.profile.sauna?.enabled && s.profile.sauna?.ackDate);
+
+// Every exercise gets a set count and a rest time. A program's prescription wins; otherwise
+// it's what you set for that exercise, or a default from its rep range (heavier work, longer rest).
+const REST_CHOICES = [45, 60, 90, 120, 150, 180, 240];
+function defaultRest(ex) {
+  const top = ex?.repMax ?? 12;
+  return top <= 6 ? 180 : top <= 10 ? 120 : 90;
+}
+function goalFor(w, ex) {
+  const item = w.plan?.items?.find((i) => i.exId === ex.id);
+  if (item) return item;
+  return { exId: ex.id, name: ex.name, sets: ex.sets || 3, repMin: ex.repMin, repMax: ex.repMax, rest: ex.rest || defaultRest(ex), own: true };
+}
+const setsDone = (w, id) => w.sets.filter((x) => x.exId === id).length;
+
+// The next exercise in today's order that still has sets left, after the given one.
+function nextOpenEx(s, w, fromId) {
+  const exById = Object.fromEntries(s.exercises.map((e) => [e.id, e]));
+  const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])].filter((id) => exById[id]);
+  const open = order.filter((id) => !goalFor(w, exById[id]).extra && setsDone(w, id) < goalFor(w, exById[id]).sets);
+  const after = order.indexOf(fromId);
+  return exById[open.find((id) => order.indexOf(id) > after) || open[0]] || null;
+}
 
 // True once every exercise the program prescribed today has all its sets.
 function programComplete(w) {
@@ -1478,6 +1501,19 @@ function replaceHint(s, w, ex, exById) {
     </section>`;
 }
 
+// Sets and rest for an exercise your program doesn't set. Saved on the exercise, so it sticks.
+function goalBlock(ex, goal) {
+  return html`
+    <details class="how"><summary>Sets and rest</summary>
+      <form class="inline" data-form="ex-goal" data-ex="${ex.id}">
+        <label>Sets<input name="sets" type="number" inputmode="numeric" min="1" max="20" value="${goal.sets}" required></label>
+        <label class="grow">Rest between sets<select name="rest">${[...new Set([...REST_CHOICES, goal.rest])].sort((a, b) => a - b).map((r) => html`<option value="${r}" ${r === goal.rest ? "selected" : ""}>${fmtRest(r)}</option>`)}</select></label>
+        <button class="btn" type="submit">Save</button>
+      </form>
+      <p class="hint">Applies every time you do ${ex.name} outside a program. ${ex.rest ? "" : `The default rest comes from its ${goal.repMin}–${goal.repMax} rep range: heavier, lower-rep work needs longer to recover.`}</p>
+    </details>`;
+}
+
 // Change an exercise for today: a suggested same-muscle substitute, anything from the saved
 // library, or remove it from today. Works for every exercise, including ones typed in by hand.
 function changeBlock(s, ex, w, rxItem, hasSets) {
@@ -1531,15 +1567,19 @@ function exerciseCard(s, ex, w, key, open = true) {
     nextReps = sug.repsPerSet?.[sets.length] ?? sug.reps;
     nextWeight = sets.length ? sets[sets.length - 1].weight : sug.weight;
   }
-  const range = rxItem ? (rxItem.repMin === rxItem.repMax ? `${rxItem.repMin}` : `${rxItem.repMin}–${rxItem.repMax}`) : `${ex.repMin}–${ex.repMax}`;
-  const target = rxItem ? (rxItem.detail ? `${rxItem.sets} sets` : `${rxItem.sets} × ${range}`) : `${range} reps`;
-  const rest = rxItem?.rest;
+  const goal = goalFor(w, ex);
+  const range = goal.repMin === goal.repMax ? `${goal.repMin}` : `${goal.repMin}–${goal.repMax}`;
+  const target = goal.detail ? `${goal.sets} sets` : `${goal.sets} × ${range}`;
+  const rest = goal.rest;
   const prev = prevSession(s, ex, rx, key);
   const feedback = feedbackFor(s, ex, rxItem, prev, sets);
   const verdict = !rxItem?.detail && sets.length ? exerciseVerdict(sets, prev, s.baselines?.[ex.id]) : null;
   const inc = ex.increment || 5;
   const how = howOf(ex);
-  const done = rxItem && sets.length >= rxItem.sets;
+  const done = sets.length >= goal.sets;
+  const next = done ? nextOpenEx(s, w, ex.id) : null;
+  // A program workout ends at its last lift; a freestyle one ends when nothing is left.
+  const wrapUp = rxItem ? !openItems(w).length || lastLiftDone(w) : !next;
   const warm = warmupFor(s, ex, w, rxItem, sug, nextWeight);
   const deltaText = (fb) => fb.delta || (prev ? "—" : "new");
   const setRows = sets.length ? html`<ol class="set-list">${sets.map((x, i) => {
@@ -1560,7 +1600,7 @@ function exerciseCard(s, ex, w, key, open = true) {
       <section class="card ex-card is-collapsed${done ? " is-done" : ""}">
         <button type="button" class="ex-toggle" data-action="open-ex" data-id="${ex.id}" aria-expanded="false">
           <span><span class="ex-name">${ex.name}</span><span class="sub-line">${target}${verdict ? ` · ${VERDICT_LABEL[verdict.kind].toLowerCase()}` : ""}</span><span class="open-hint">${sets.length ? "Edit sets" : "Log sets"}</span></span>
-          ${rxItem ? html`<span class="ex-count"><strong>${Math.min(sets.length, rxItem.sets)}</strong>/${rxItem.sets}</span>` : ""}
+          <span class="ex-count"><strong>${Math.min(sets.length, goal.sets)}</strong>/${goal.sets}</span>
         </button>
         ${setRows}
       </section>`;
@@ -1573,7 +1613,7 @@ function exerciseCard(s, ex, w, key, open = true) {
           <h3>${ex.name}</h3>
           <div class="sub-line">${target}${rest ? ` · rest ${fmtRest(rest)}` : ""}</div>
         </div>
-        ${rxItem ? html`<div class="ex-count" aria-label="${sets.length} of ${rxItem.sets} sets done"><strong>${Math.min(sets.length, rxItem.sets)}</strong>/${rxItem.sets}</div>` : ""}
+        <div class="ex-count" aria-label="${sets.length} of ${goal.sets} sets done"><strong>${Math.min(sets.length, goal.sets)}</strong>/${goal.sets}</div>
       </div>
 
       <p class="target target-${sug.kind || "new"}"><span class="target-label">${TARGET_LABEL[sug.kind || "new"]}</span> ${sug.note}</p>
@@ -1594,9 +1634,9 @@ function exerciseCard(s, ex, w, key, open = true) {
 
       ${done && ui.extraSet !== ex.id ? html`
         <div class="done-panel">
-          <p><strong>All ${rxItem.sets} sets done.</strong> ${!openItems(w).length ? "Nice work." : lastLiftDone(w) ? `That was the last lift. ${openItems(w)[0].name} has a set left if you want it.` : `Next: ${openItems(w)[0].name}.`}</p>
+          <p><strong>All ${goal.sets} sets done.</strong> ${!next ? "Nice work." : wrapUp ? `That was the last lift. ${next.name} has a set left if you want it.` : `Next: ${next.name}.`}</p>
           <div class="set-actions">
-            ${!openItems(w).length || lastLiftDone(w) ? html`<button type="button" class="btn" data-action="${w.finished ? "wrap-up" : "finish-open"}">${w.finished ? "See today's summary" : "Finish workout"}</button>` : html`<button type="button" class="btn" data-action="open-ex" data-id="${openItems(w)[0].exId}">Go to ${openItems(w)[0].name}</button>`}
+            ${wrapUp ? html`<button type="button" class="btn" data-action="${w.finished ? "wrap-up" : "finish-open"}">${w.finished ? "See today's summary" : "Finish workout"}</button>` : html`<button type="button" class="btn" data-action="open-ex" data-id="${next.id}">Go to ${next.name}</button>`}
             <button type="button" class="btn ghost" data-action="extra-set" data-id="${ex.id}">Log an extra set</button>
           </div>
         </div>` : html`
@@ -1630,6 +1670,7 @@ function exerciseCard(s, ex, w, key, open = true) {
       </form>`}
 
       ${rxItem?.swappedFrom ? html`<p class="hint">Swapped in for ${rxItem.swappedFrom}.</p>` : ""}
+      ${goal.own ? goalBlock(ex, goal) : ""}
       ${changeBlock(s, ex, w, rxItem, sets.length > 0)}
       ${howBlock(how)}
       ${s.settings.apiKey ? html`<details class="how" ${ui.coach[ex.id] ? "open" : ""}><summary>Ask the coach</summary>
@@ -2423,11 +2464,15 @@ const forms = {
       const w = ensureWorkout(s, ui.date);
       const wasComplete = programComplete(w);
       w.sets.push(set);
-      const rxItem = w.plan?.items?.find((i) => i.exId === set.exId);
-      if (w.sets.filter((x) => x.exId === set.exId).length >= (rxItem?.sets ?? 99)) ui.openEx = null;
+      const ex = s.exercises.find((e) => e.id === set.exId);
+      const goal = ex ? goalFor(w, ex) : { sets: 99 };
+      const n = setsDone(w, set.exId);
+      if (n >= goal.sets) { ui.openEx = null; ui.extraSet = null; }
       const item = w.plan?.items?.find((i) => i.exId === set.exId && !i.extra);
-      const exJustDone = item && w.sets.filter((x) => x.exId === set.exId).length === item.sets;
-      justFinished = !w.finished && ((!wasComplete && programComplete(w)) || (exJustDone && (lastLiftDone(w) || !openItems(w).length)));
+      const exJustDone = item && n === item.sets;
+      // Freestyle (no program today): finished once every exercise on the list has its sets.
+      const freeDone = !w.plan?.items?.length && n === goal.sets && !nextOpenEx(s, w, set.exId);
+      justFinished = !w.finished && ((!wasComplete && programComplete(w)) || (exJustDone && (lastLiftDone(w) || !openItems(w).length)) || freeDone);
       const abs = (w.plan?.items || []).filter((i) => i.extra);
       absDone = !justFinished && w.finished && !w.wrapped && abs.some((i) => i.exId === set.exId) && abs.every((i) => w.sets.filter((x) => x.exId === i.exId).length >= i.sets);
     });
@@ -2435,9 +2480,15 @@ const forms = {
     if (absDone) { stopRest(); return afterExtra("abs"); }
     if (form.dataset.rest) startRest(+form.dataset.rest);
   },
+  "ex-goal"(d, form) {
+    const sets = Math.max(1, Math.min(20, Math.round(+d.sets) || 3)), rest = +d.rest || 90;
+    update((s) => { const ex = s.exercises.find((e) => e.id === form.dataset.ex); if (ex) Object.assign(ex, { sets, rest }); });
+    toast(`${sets} sets, ${fmtRest(rest)} rest`);
+  },
   "new-ex"(d) {
     const repMin = +d.repMin, repMax = Math.max(+d.repMax, repMin);
-    update((s) => { s.exercises.push({ id: uid(), name: d.name.trim(), kind: d.kind, muscle: d.muscle, repMin, repMax, increment: +d.increment }); });
+    const sets = Math.max(1, Math.min(20, Math.round(+d.sets) || 3));
+    update((s) => { s.exercises.push({ id: uid(), name: d.name.trim(), kind: d.kind, muscle: d.muscle, repMin, repMax, increment: +d.increment, sets, ...(+d.rest ? { rest: +d.rest } : {}) }); });
   },
   "start-program"(d, form) {
     const id = form.dataset.id;
