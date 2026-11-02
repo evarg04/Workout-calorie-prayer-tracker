@@ -945,6 +945,13 @@ function renderTrain(s) {
 
     ${order.map((id) => exerciseCard(s, exById[id], w, key, id === openId))}
 
+    ${w.removed?.length ? html`
+      <section class="card removed-card">
+        <div class="sec-head"><h2>Removed from today</h2><span class="sec-meta">Your program isn't changed</span></div>
+        <ul class="entries">${w.removed.map((r, i) => html`<li><span>${r.name}${r.sets.length ? html`<span class="sub-line">${r.sets.length} logged set${r.sets.length === 1 ? "" : "s"} kept aside</span>` : ""}</span>
+          <button type="button" class="btn ghost btn-sm" data-action="put-back" data-i="${i}">Put back</button></li>`)}</ul>
+      </section>` : ""}
+
     ${typeWorkoutCard(s)}
 
     <section class="card">
@@ -954,12 +961,11 @@ function renderTrain(s) {
         <button class="btn" type="submit">Find</button>
       </form>
       <div id="ex-results" aria-live="polite">${exResults(s)}</div>
-      ${s.exercises.some((e) => !order.includes(e.id)) ? html`<details><summary>Pick from your library</summary>
-        <form class="inline" data-form="add-ex">
-          <label class="grow">Exercise<select name="exId">${s.exercises.filter((e) => !order.includes(e.id)).map((e) => html`<option value="${e.id}">${e.name}</option>`)}</select></label>
+      ${s.exercises.some((e) => !order.includes(e.id)) ? html`
+        <form class="inline lib-add" data-form="add-ex">
+          <label class="grow">Or add from your library<select name="exId">${[...s.exercises].filter((e) => !order.includes(e.id)).sort((a, b) => a.name.localeCompare(b.name)).map((e) => html`<option value="${e.id}">${e.name}</option>`)}</select></label>
           <button class="btn" type="submit">Add</button>
-        </form>
-      </details>` : ""}
+        </form>` : ""}
     </section>
 
     ${workoutReview(s, w, key, order, exById)}
@@ -1444,21 +1450,38 @@ function warmupFor(s, ex, w, rxItem, sug, nextWeight) {
   return { ...plan, targetLabel: `${target} lb` };
 }
 
-// Two same-muscle substitutes for when equipment is taken or you'd rather do something else.
-function swapBlock(s, ex, hasSets) {
-  const subs = substitutesFor(ex);
-  if (!subs.length) return "";
+// Change an exercise for today: a suggested same-muscle substitute, anything from the saved
+// library, or remove it from today. Works for every exercise, including ones typed in by hand.
+function changeBlock(s, ex, w, rxItem, hasSets) {
+  const subs = rxItem?.detail ? [] : substitutesFor(ex);
+  const inToday = new Set([...(w.order || []), ...w.sets.map((x) => x.exId)]);
+  const lib = s.exercises.filter((e) => !inToday.has(e.id));
+  const muscle = ex.muscle || CATALOG[ex.name]?.[1];
+  const same = lib.filter((e) => muscle && (e.muscle || CATALOG[e.name]?.[1]) === muscle);
+  const rest = lib.filter((e) => !same.includes(e)).sort((a, b) => a.name.localeCompare(b.name));
+  const verb = hasSets ? "Add" : "Use this instead";
   return html`
-    <details class="how swap">
-      <summary>Swap exercise</summary>
-      <p class="hint">${hasSets ? "You've logged sets on this already, so a substitute is added as an extra exercise." : "Same muscle, same movement pattern. Today's sets, reps and rest carry over; the new lift tracks its own progress."}</p>
-      <ul class="sub-list">${subs.map((x) => html`
-        <li>
-          <div class="sub-top"><strong>${x.name}</strong>
-            <button type="button" class="btn btn-sm" data-action="swap-ex" data-from="${ex.id}" data-to="${x.name}">${hasSets ? "Add" : "Use this instead"}</button></div>
-          <span class="sub-line">${x.why}</span>
-        </li>`)}</ul>
-      ${s.program && !hasSets ? html`<label class="check"><input type="checkbox" name="always"> Use the swap every time this program calls for ${ex.name}</label>` : ""}
+    <details class="how swap" ${ui.changeOpen === ex.id ? "open" : ""}>
+      <summary>Change exercise</summary>
+      ${rxItem?.detail ? html`<p class="hint">This is a 5/3/1 main lift: its weights come from your Training Max, so it can't be swapped. You can still remove it from today.</p>` : html`
+        <p class="hint">${hasSets ? "You've logged sets on this already, so the new exercise is added after it." : "Today's sets, reps and rest carry over to the new exercise; it tracks its own progress."}</p>
+        ${subs.length ? html`<h4 class="swap-head">Suggested</h4><ul class="sub-list">${subs.map((x) => html`
+          <li>
+            <div class="sub-top"><strong>${x.name}</strong>
+              <button type="button" class="btn btn-sm" data-action="swap-ex" data-from="${ex.id}" data-to="${x.name}">${verb}</button></div>
+            <span class="sub-line">${x.why}</span>
+          </li>`)}</ul>` : ""}
+        ${lib.length ? html`
+          <h4 class="swap-head">From your exercise library</h4>
+          <form data-form="replace-ex" data-from="${ex.id}" class="inline">
+            <label class="grow">Exercise<select name="to" aria-label="Exercise from your library">
+              ${same.length ? html`<optgroup label="Same muscle">${same.map((e) => html`<option value="${e.name}">${e.name}</option>`)}</optgroup>` : ""}
+              <optgroup label="${same.length ? "Everything else" : "Your library"}">${rest.map((e) => html`<option value="${e.name}">${e.name}</option>`)}</optgroup>
+            </select></label>
+            <button class="btn" type="submit">${hasSets ? "Add" : "Replace"}</button>
+          </form>` : html`<p class="hint">Every exercise in your library is already in today's workout.</p>`}
+        ${s.program && !hasSets && rxItem ? html`<label class="check"><input type="checkbox" name="always"> Use the swap every time this program calls for ${rxItem.swappedFrom || ex.name}</label>` : ""}`}
+      <button type="button" class="btn ghost full remove-ex" data-action="remove-ex" data-id="${ex.id}">Remove from today</button>
     </details>`;
 }
 
@@ -1579,7 +1602,7 @@ function exerciseCard(s, ex, w, key, open = true) {
       </form>`}
 
       ${rxItem?.swappedFrom ? html`<p class="hint">Swapped in for ${rxItem.swappedFrom}.</p>` : ""}
-      ${rxItem?.detail ? "" : swapBlock(s, ex, sets.length > 0)}
+      ${changeBlock(s, ex, w, rxItem, sets.length > 0)}
       ${howBlock(how)}
       ${s.settings.apiKey ? html`<details class="how" ${ui.coach[ex.id] ? "open" : ""}><summary>Ask the coach</summary>
         <form data-form="ask-coach" data-ex="${ex.id}" class="inline">
@@ -2069,6 +2092,37 @@ function ensureFaith(s, key) {
   return (s.faith[key] ??= { checks: {}, lectio: {}, examen: {} });
 }
 
+// Swap one of today's exercises for another (a suggested substitute or one from the library).
+function swapExercise(fromId, toName, always) {
+  let toId;
+  update((st) => {
+    const w = ensureWorkout(st, ui.date);
+    const from = st.exercises.find((e) => e.id === fromId);
+    const rxItem = w.plan?.items?.find((i) => i.exId === from.id);
+    const to = ensureExercise(st, toName, rxItem?.repMin, rxItem?.repMax);
+    toId = to.id;
+    const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])];
+    const done = w.sets.filter((x) => x.exId === from.id).length;
+    if (done) {
+      if (!order.includes(to.id)) order.splice(order.indexOf(from.id) + 1, 0, to.id);
+      w.order = order;
+      // The sets already logged stay with the old lift; the rest move to the new one.
+      if (rxItem && !rxItem.detail && !w.plan.items.some((i) => i.exId === to.id)) {
+        const left = Math.max(1, rxItem.sets - done);
+        w.plan.items.splice(w.plan.items.indexOf(rxItem) + 1, 0, { ...rxItem, exId: to.id, name: to.name, sets: left, swappedFrom: from.name });
+        rxItem.sets = Math.min(rxItem.sets, done);
+      }
+    } else {
+      w.order = [...new Set(order.map((id) => (id === from.id ? to.id : id)))];
+      if (rxItem) Object.assign(rxItem, { exId: to.id, name: to.name, swappedFrom: rxItem.swappedFrom || from.name });
+    }
+    if (always && st.program) (st.program.swaps ??= {})[rxItem?.swappedFrom || from.name] = to.name;
+  });
+  ui.openEx = toId;
+  render();
+  toast(always ? `${toName} will replace it from now on` : `Swapped to ${toName}`);
+}
+
 function ensureExercise(st, name, repMin, repMax) {
   let ex = st.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
   const meta = CATALOG[name];
@@ -2318,7 +2372,18 @@ const forms = {
     }
     render();
   },
-  "add-ex"(d) { if (d.exId) update((s) => { const w = ensureWorkout(s, ui.date); if (!w.order.includes(d.exId)) w.order.push(d.exId); }); ui.chartEx = d.exId; },
+  "replace-ex"(d, form) {
+    if (!d.to) return;
+    swapExercise(form.dataset.from, d.to, !!form.closest("details")?.querySelector('input[name="always"]')?.checked);
+  },
+  "add-ex"(d) {
+    if (!d.exId) return;
+    update((s) => { const w = ensureWorkout(s, ui.date); if (!w.order.includes(d.exId)) w.order.push(d.exId); });
+    ui.chartEx = d.exId;
+    ui.openEx = d.exId;
+    render();
+    document.querySelector(`form[data-ex="${d.exId}"]`)?.closest(".card")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  },
   set(d, form) {
     const set = { id: uid(), exId: form.dataset.ex, weight: +d.weight, reps: +d.reps };
     if (d.rir !== "" && d.rir !== undefined) set.rir = +d.rir;
@@ -2560,27 +2625,48 @@ const actions = {
   },
   "del-cardio"(el) { update((st) => { ensureWorkout(st, ui.date).cardio.splice(+el.dataset.i, 1); }); },
   "swap-ex"(el) {
-    const always = !!el.closest("details")?.querySelector('input[name="always"]')?.checked;
-    let toId;
+    swapExercise(el.dataset.from, el.dataset.to, !!el.closest("details")?.querySelector('input[name="always"]')?.checked);
+  },
+  "remove-ex"(el) {
+    const id = el.dataset.id;
+    const s = getState();
+    const w = s.workouts[ui.date];
+    const ex = s.exercises.find((e) => e.id === id);
+    const n = w?.sets.filter((x) => x.exId === id).length || 0;
+    if (!w || !ex) return;
+    if (n && !confirm(`Remove ${ex.name} and its ${n} logged set${n === 1 ? "" : "s"} from today? You can put it back.`)) return;
     update((st) => {
-      const w = ensureWorkout(st, ui.date);
-      const from = st.exercises.find((e) => e.id === el.dataset.from);
-      const rxItem = w.plan?.items?.find((i) => i.exId === from.id);
-      const to = ensureExercise(st, el.dataset.to, rxItem?.repMin, rxItem?.repMax);
-      toId = to.id;
-      const order = [...new Set([...(w.order || []), ...w.sets.map((x) => x.exId)])];
-      if (w.sets.some((x) => x.exId === from.id)) {
-        if (!order.includes(to.id)) order.splice(order.indexOf(from.id) + 1, 0, to.id);
-        w.order = order;
-      } else {
-        w.order = [...new Set(order.map((id) => (id === from.id ? to.id : id)))];
-        if (rxItem) Object.assign(rxItem, { exId: to.id, name: to.name, swappedFrom: rxItem.swappedFrom || from.name });
-      }
-      if (always && st.program) (st.program.swaps ??= {})[rxItem?.swappedFrom || from.name] = to.name;
+      const wk = ensureWorkout(st, ui.date);
+      const order = [...new Set([...(wk.order || []), ...wk.sets.map((x) => x.exId)])];
+      const item = wk.plan?.items?.find((i) => i.exId === id);
+      (wk.removed ??= []).push({ exId: id, name: ex.name, pos: order.indexOf(id), item: item ? { ...item, pos: wk.plan.items.indexOf(item) } : null, sets: wk.sets.filter((x) => x.exId === id) });
+      wk.order = order.filter((x) => x !== id);
+      wk.sets = wk.sets.filter((x) => x.exId !== id);
+      if (item) wk.plan.items = wk.plan.items.filter((i) => i !== item);
     });
-    ui.openEx = toId;
-    render();
-    toast(always ? `${el.dataset.to} will replace it from now on` : `Swapped to ${el.dataset.to}`);
+    if (ui.openEx === id) ui.openEx = null;
+    toast(`${ex.name} removed from today. Your program isn't changed`);
+  },
+  "put-back"(el) {
+    const i = +el.dataset.i;
+    let name = "";
+    update((st) => {
+      const wk = ensureWorkout(st, ui.date);
+      const r = wk.removed?.[i];
+      if (!r) return;
+      name = r.name;
+      wk.removed.splice(i, 1);
+      if (!st.exercises.some((e) => e.id === r.exId)) return;
+      const order = wk.order.filter((x) => x !== r.exId);
+      order.splice(Math.min(Math.max(r.pos, 0), order.length), 0, r.exId);
+      wk.order = order;
+      wk.sets.push(...r.sets.filter((x) => !wk.sets.some((y) => y.id === x.id)));
+      if (r.item && wk.plan?.items && !wk.plan.items.some((it) => it.exId === r.exId)) {
+        const { pos, ...item } = r.item;
+        wk.plan.items.splice(Math.min(pos, wk.plan.items.length), 0, item);
+      }
+    });
+    if (name) toast(`${name} is back`);
   },
   "unswap"(el) {
     update((st) => { delete st.program.swaps[el.dataset.name]; });
